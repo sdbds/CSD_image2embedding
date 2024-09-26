@@ -1,0 +1,15 @@
+pandas
+numpy
+scikit-learn
+pillow
+datasets
+tqdm
+clip @ git+https://github.com/openai/CLIP.git@main
+torch
+pylance
+pyarrow
+plotly
+dash
+rich
+transformers
+umap-learn
