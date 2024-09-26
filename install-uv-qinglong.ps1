@@ -73,10 +73,10 @@ Write-Output "安装程序所需依赖 (已进行国内加速，若在国外或无法使用加速源请换用 i
 ~/.cargo/bin/uv pip sync ./requirements-uv.txt
 Check "环境安装失败。"
 
-# $download_hy = Read-Host "是否下载CSD模型? 若需要下载模型选择 y ，若不需要选择 n。[y/n] (默认为 n)"
-# if ($download_hy -eq "y" -or $download_hy -eq "Y"){
-#     huggingface-cli download tomg-group-umd/CSD-ViT-L --local-dir ./pretrainedmodels
-# }
+$download_hy = Read-Host "是否下载CSD模型? 若需要下载模型选择 y ，若不需要选择 n。[y/n] (默认为 n)"
+if ($download_hy -eq "y" -or $download_hy -eq "Y"){
+    huggingface-cli download tomg-group-umd/CSD-ViT-L --local-dir ./pretrainedmodels
+}
 
 Write-Output "安装完毕"
 Read-Host | Out-Null ;
