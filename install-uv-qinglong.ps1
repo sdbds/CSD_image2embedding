@@ -68,7 +68,7 @@ else{
     . ./.venv/bin/activate.ps1
 }
 
-Write-Output "安装程序所需依赖 (已进行国内加速，若在国外或无法使用加速源请换用 install.ps1 脚本)"
+Write-Output "安装程序所需依赖"
 
 ~/.cargo/bin/uv pip sync ./requirements-uv.txt
 Check "环境安装失败。"

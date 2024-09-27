@@ -21,11 +21,11 @@ class CustomDataset(Dataset):
             img = self.transform(img)
         return img
     
-    def load_hash(self, idx):
-        hash = self.ds.take([idx], columns=["hash"]).to_pydict()
-        return hash["hash"][0]
+    def load_path(self, idx):
+        filename = self.ds.take([idx], columns=["filename"]).to_pydict()
+        return filename["filename"][0]
 
     def __getitem__(self, idx):
-        hash = self.load_hash(idx)
+        path = self.load_path(idx)
         img = self.load_image(idx)
-        return hash, img
+        return path, img

@@ -25,7 +25,7 @@ $Env:XFORMERS_FORCE_DISABLE_TRITON = "1"
 $Env:HF_ENDPOINT = "https://hf-mirror.com"
 
 # run train
-python main.py
+python main.py --k_clusters 100 --symlink
 
 Write-Output "Train finished"
 Read-Host | Out-Null ;

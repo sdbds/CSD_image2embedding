@@ -119,7 +119,7 @@ def process(data):
 
         print(f"Image '{image_path}' processed successfully.")
 
-        filename = pa.array([os.path.splitext(os.path.basename(image_path))[0]], type=pa.string())
+        filename = pa.array([os.path.abspath(image_path)], type=pa.string())
         extension = pa.array([os.path.splitext(os.path.basename(image_path))[1]], type=pa.string())
         width = pa.array([int(width)], type=pa.int32())
         height = pa.array([int(height)], type=pa.int32())

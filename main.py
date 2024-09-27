@@ -8,7 +8,7 @@ from transformers import CLIPProcessor
 from pipeline import CSDCLIPPipeline
 from datasets import CustomDataset
 from rich.progress import Progress
-from dash_page import make_dash_kmeans
+from dash_page import make_dash_kmeans, make_multi_view_dash
 from PIL import Image
 import numpy as np
 
@@ -17,6 +17,7 @@ import umap
 import argparse
 
 IMAGE_SIZE = 336
+
 
 def collate_fn_remove_corrupted(batch):
     """Collate function that allows to remove corrupted examples in the
@@ -35,6 +36,7 @@ def resize_image(image, max_resolution=192):
         )
     return image
 
+
 def remove_white_borders(image):
     image_np = np.array(image)
     mask = image_np != 255
@@ -43,6 +45,7 @@ def remove_white_borders(image):
     x1, y1, _ = coords.max(axis=0) + 1  # slices are exclusive at the top
     cropped_image = image_np[x0:x1, y0:y1, :]
     return Image.fromarray(cropped_image)
+
 
 def resize_and_remove_borders(image, max_resolution=192):
     image = resize_image(image, max_resolution)
@@ -67,20 +70,65 @@ def preprocess_image(image):
         constant_values=255,
     )
 
-    image = Image.fromarray(image[:, :, ::-1]).resize((IMAGE_SIZE, IMAGE_SIZE), Image.LANCZOS)
+    image = Image.fromarray(image[:, :, ::-1]).resize(
+        (IMAGE_SIZE, IMAGE_SIZE), Image.LANCZOS
+    )
 
     return image
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CSD Style Embedding and Visualization")
-    parser.add_argument("--dataset_path", type=str, default="dataset.lance", help="Path to the dataset file")
-    parser.add_argument("--embeddings_path", type=str, default="embeddings.lance", help="Path to save/load embeddings")
-    parser.add_argument("--model_name", type=str, default="yuxi-liu-wired/CSD", help="Name of the pretrained model")
-    parser.add_argument("--processor_name", type=str, default="openai/clip-vit-large-patch14", help="Name of the processor")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for data loading")
-    parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for data loading")
-    parser.add_argument("--k_clusters", type=int, default=122, help="Number of clusters for KMeans")
+    parser = argparse.ArgumentParser(
+        description="CSD Style Embedding and Visualization"
+    )
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default="datasets.lance",
+        help="Path to the dataset file",
+    )
+    parser.add_argument(
+        "--embeddings_path",
+        type=str,
+        default="embeddings.lance",
+        help="Path to save/load embeddings",
+    )
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="yuxi-liu-wired/CSD",
+        help="Name of the pretrained model",
+    )
+    parser.add_argument(
+        "--processor_name",
+        type=str,
+        default="openai/clip-vit-large-patch14",
+        help="Name of the processor",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=12, help="Batch size for data loading"
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=0, help="Number of workers for data loading"
+    )
+    parser.add_argument(
+        "--k_clusters", type=int, default=40, help="Number of clusters for KMeans"
+    )
+    parser.add_argument(
+        "--min_cluster_size", type=int, default=10, help="smaller size get more clusters for HDBSCAN"
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="output",
+        help="Output directory for the classified images",
+    )
+    parser.add_argument(
+        "--symlink",
+        action="store_true",
+        help="Create symlinks instead of copying images",
+    )
+
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -104,40 +152,64 @@ if __name__ == "__main__":
             pin_memory=True,
         )
 
-        embeddings = []
+        style_embeddings = []
+        content_embeddings = []
         imagelist = []
-        hashlist = []
+        pathlist = []
         with Progress() as progress:
             task = progress.add_task(
                 "[green]Generating embeddings...", total=len(dataloader)
             )
             for data in dataloader:
-                for hash, image in data:
+                for path, image in data:
                     image = preprocess_image(image)
                     outputs = pipeline(image)
                     style_outputs = outputs["style_output"].squeeze(0)
-                    embeddings.append(style_outputs)
+                    content_outputs = outputs["content_output"].squeeze(0)
+                    style_embeddings.append(style_outputs)
+                    content_embeddings.append(content_outputs)
                     buffer = io.BytesIO()
                     image = resize_and_remove_borders(image)
                     image.save(buffer, format="JPEG")
                     image_bytes = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    hashlist.append(hash)
+                    pathlist.append(path)
                     imagelist.append(image_bytes)
-                    progress.update(task, advance=1)
+                progress.update(task, advance=1)
 
-        reducer = umap.UMAP(n_components=2, random_state=42)
-        umap_results = reducer.fit_transform(np.array(embeddings))
+        print("Embeddings generated successfully!")
+        print("Saving embeddings to disk...")
+        reducer = umap.UMAP(
+            n_components=2,
+            metric="cosine",
+            random_state=42,
+        )
+        style_umap_results = reducer.fit_transform(np.array(style_embeddings))
+        content_umap_results = reducer.fit_transform(np.array(content_embeddings))
 
         new_data = pa.table(
             {
-                "hash": pa.array(hashlist),
+                "path": pa.array(pathlist),
                 "image": pa.array(imagelist),
-                "embeddings": pa.array(embeddings),
-                "x": pa.array(umap_results[:, 0]),
-                "y": pa.array(umap_results[:, 1]),
+                "x1": pa.array(style_umap_results[:, 0]),
+                "y1": pa.array(style_umap_results[:, 1]),
+                "x2": pa.array(content_umap_results[:, 0]),
+                "y2": pa.array(content_umap_results[:, 1]),
             }
         )
 
         embeddingslance = lance.write_dataset(new_data, args.embeddings_path)
 
-    make_dash_kmeans(embeddingslance, "style", k=args.k_clusters)
+    titles = [
+        "KMeans_style",
+        "HDBSCAN_style",
+        "KMeans_content",
+        "HDBSCAN_content",
+    ]
+    params_list = [
+        {"k": args.k_clusters, "hdbscan": False, "feature_set": "1"},
+        {"k": args.k_clusters, "hdbscan": True, "feature_set": "1"},
+        {"k": args.k_clusters, "hdbscan": False, "feature_set": "2"},
+        {"k": args.k_clusters, "hdbscan": True, "feature_set": "2"},
+    ]
+    make_multi_view_dash(embeddingslance, titles, params_list, args)
+    # make_dash_kmeans(embeddingslance, "style", k=args.k_clusters, output_dir=args.style_ouput_dir)
