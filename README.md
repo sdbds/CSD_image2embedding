@@ -21,9 +21,11 @@ Then `pwsh Step1_install-uv.ps1`
 
 ## Useage
 
-1、Put any image to datasets
+1、Put any image datasets to `datasets` folder
 
 2、Powershell run with `Step2_embedding.ps1`(right clik)
 Linux use `pwsh Step2_embedding.ps1`
 
 3、Open address in terminal(should be automatic)
+
+4、results save in `output` folder
