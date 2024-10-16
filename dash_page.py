@@ -11,6 +11,7 @@ import io
 import os
 from scipy.spatial.distance import cdist
 from process_image import classify_images
+import webbrowser
 
 
 def find_free_port():
@@ -366,8 +367,10 @@ def make_multi_view_dash(
 
     app = create_multi_view_dash_app(view_data)
     port = find_free_port()
-    print(f"Serving on http://127.0.0.1:{port}/")
+    url = f"http://127.0.0.1:{port}/"
+    print(f"Serving on {url}")
     print(f"To serve this over the Internet, run `ngrok http {port}`")
+    webbrowser.open(url)
     app.run_server(port=port)
     return app
 
@@ -387,7 +390,9 @@ def make_dash_kmeans(datasets, title, k=50, hdbscan=False, output_dir="output"):
     )
     app = create_dash_app(fig, images)
     port = find_free_port()
-    print(f"Serving on http://127.0.0.1:{port}/")
+    url = f"http://127.0.0.1:{port}/"
+    print(f"Serving on {url}")
     print(f"To serve this over the Internet, run `ngrok http {port}`")
+    webbrowser.open(url)
     app.run_server(port=port)
     return app
