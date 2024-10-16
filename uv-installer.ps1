@@ -6,12 +6,12 @@
 <#
 .SYNOPSIS
 
-The installer for uv 0.4.16
+The installer for uv 0.4.21
 
 .DESCRIPTION
 
 This script detects what platform you're on and fetches an appropriate archive from
-https://github.com/astral-sh/uv/releases/download/0.4.16
+https://github.com/astral-sh/uv/releases/download/0.4.21
 then unpacks the binaries and installs them to
 
     $env:CARGO_HOME/bin (or $HOME/.cargo/bin)
@@ -31,7 +31,7 @@ Print help
 
 param (
     [Parameter(HelpMessage = "The URL of the directory where artifacts can be fetched from")]
-    [string]$ArtifactDownloadUrl = 'https://github.com/astral-sh/uv/releases/download/0.4.16',
+    [string]$ArtifactDownloadUrl = 'https://github.com/astral-sh/uv/releases/download/0.4.21',
     [Parameter(HelpMessage = "Don't add the install directory to PATH")]
     [switch]$NoModifyPath,
     [Parameter(HelpMessage = "Print Help")]
@@ -39,10 +39,10 @@ param (
 )
 
 $app_name = 'uv'
-$app_version = '0.4.16'
+$app_version = '0.4.21'
 
 $receipt = @"
-{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_prefix":"AXO_INSTALL_PREFIX","provider":{"source":"cargo-dist","version":"0.22.1"},"source":{"app_name":"uv","name":"uv","owner":"astral-sh","release_type":"github"},"version":"0.4.16"}
+{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_prefix":"AXO_INSTALL_PREFIX","provider":{"source":"cargo-dist","version":"0.22.1"},"source":{"app_name":"uv","name":"uv","owner":"astral-sh","release_type":"github"},"version":"0.4.21"}
 "@
 $receipt_home = "${env:LOCALAPPDATA}\uv"
 

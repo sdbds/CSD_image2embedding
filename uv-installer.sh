@@ -17,13 +17,13 @@ fi
 set -u
 
 APP_NAME="uv"
-APP_VERSION="0.4.16"
-ARTIFACT_DOWNLOAD_URL="${INSTALLER_DOWNLOAD_URL:-https://github.com/astral-sh/uv/releases/download/0.4.16}"
+APP_VERSION="0.4.21"
+ARTIFACT_DOWNLOAD_URL="${INSTALLER_DOWNLOAD_URL:-https://github.com/astral-sh/uv/releases/download/0.4.21}"
 PRINT_VERBOSE=${INSTALLER_PRINT_VERBOSE:-0}
 PRINT_QUIET=${INSTALLER_PRINT_QUIET:-0}
 NO_MODIFY_PATH=${INSTALLER_NO_MODIFY_PATH:-0}
 read -r RECEIPT <<EORECEIPT
-{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_prefix":"AXO_INSTALL_PREFIX","provider":{"source":"cargo-dist","version":"0.22.1"},"source":{"app_name":"uv","name":"uv","owner":"astral-sh","release_type":"github"},"version":"0.4.16"}
+{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_prefix":"AXO_INSTALL_PREFIX","provider":{"source":"cargo-dist","version":"0.22.1"},"source":{"app_name":"uv","name":"uv","owner":"astral-sh","release_type":"github"},"version":"0.4.21"}
 EORECEIPT
 # Are we happy with this same path on Linux and Mac?
 RECEIPT_HOME="${HOME}/.config/uv"
@@ -33,10 +33,10 @@ usage() {
     cat <<EOF
 uv-installer.sh
 
-The installer for uv 0.4.16
+The installer for uv 0.4.21
 
 This script detects what platform you're on and fetches an appropriate archive from
-https://github.com/astral-sh/uv/releases/download/0.4.16
+https://github.com/astral-sh/uv/releases/download/0.4.21
 then unpacks the binaries and installs them to
 
     \$CARGO_HOME/bin (or \$HOME/.cargo/bin)
