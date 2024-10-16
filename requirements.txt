@@ -13,4 +13,4 @@ dash
 rich
 transformers
 umap-learn
-hdbscan==0.8.37
+hdbscan

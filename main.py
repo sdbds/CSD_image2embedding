@@ -9,6 +9,7 @@ from pipeline import CSDCLIPPipeline
 from datasets import CustomDataset
 from rich.progress import Progress
 from dash_page import make_dash_kmeans, make_multi_view_dash
+from lancedatasets import transform2lance
 from PIL import Image
 import numpy as np
 
@@ -82,6 +83,12 @@ if __name__ == "__main__":
         description="CSD Style Embedding and Visualization"
     )
     parser.add_argument(
+        "--train_data_dir",
+        type=str,
+        default="datasets",
+        help="directory for train images",
+    )
+    parser.add_argument(
         "--dataset_path",
         type=str,
         default="datasets.lance",
@@ -115,7 +122,10 @@ if __name__ == "__main__":
         "--k_clusters", type=int, default=40, help="Number of clusters for KMeans"
     )
     parser.add_argument(
-        "--min_cluster_size", type=int, default=10, help="smaller size get more clusters for HDBSCAN"
+        "--min_cluster_size",
+        type=int,
+        default=10,
+        help="smaller size get more clusters for HDBSCAN",
     )
     parser.add_argument(
         "--output_dir",
@@ -130,6 +140,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    if not os.path.exists(args.dataset_path):
+        transform2lance(args.train_data_dir)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = CSD_CLIP.from_pretrained(args.model_name)

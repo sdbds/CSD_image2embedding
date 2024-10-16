@@ -93,7 +93,7 @@ def load_data(images_dir, texts_dir):
     return data
 
 
-def process(data):
+def process(data, only_save_path: bool = False):
     for item in tqdm(data):
         image_path = item["image_path"]
         caption = item["caption"]
@@ -118,9 +118,13 @@ def process(data):
             continue
 
         print(f"Image '{image_path}' processed successfully.")
+        if only_save_path:
+            binary_im = b""
 
         filename = pa.array([os.path.abspath(image_path)], type=pa.string())
-        extension = pa.array([os.path.splitext(os.path.basename(image_path))[1]], type=pa.string())
+        extension = pa.array(
+            [os.path.splitext(os.path.basename(image_path))[1]], type=pa.string()
+        )
         width = pa.array([int(width)], type=pa.int32())
         height = pa.array([int(height)], type=pa.int32())
         size = pa.array([image_size], type=pa.int64())
@@ -143,9 +147,11 @@ def process(data):
         )
 
 
-def transform2lance(args: argparse.Namespace) -> None:
+def transform2lance(
+    train_data_dir, capation_dir=None, output_name="datasets", only_save_path: bool = False
+):
 
-    data = load_data(args.train_data_dir, args.captions_dir)
+    data = load_data(train_data_dir, capation_dir)
 
     schema = pa.schema(
         [
@@ -160,8 +166,8 @@ def transform2lance(args: argparse.Namespace) -> None:
         ]
     )
     try:
-        reader = pa.RecordBatchReader.from_batches(schema, process(data))
-        lance.write_dataset(reader, args.output_name + ".lance", schema)
+        reader = pa.RecordBatchReader.from_batches(schema, process(data, only_save_path))
+        lance.write_dataset(reader, output_name + ".lance", schema)
     except AttributeError as e:
         print(f"AttributeError: {e}")
 
@@ -174,7 +180,10 @@ def setup_parser() -> argparse.ArgumentParser:
         "--captions_dir", type=str, default=None, help="directory for train images"
     )
     parser.add_argument(
-        "--output_name", type=str, default="dataset", help="directory for train images"
+        "--output_name", type=str, default="datasets", help="directory for train images"
+    )
+    parser.add_argument(
+        "--only_save_path", action="store_true", help="only save the path of images"
     )
     return parser
 
@@ -184,4 +193,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    transform2lance(args)
+    transform2lance(
+        args.train_data_dir, args.captions_dir, args.output_name, args.only_save_path
+    )
