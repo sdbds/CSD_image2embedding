@@ -4,7 +4,7 @@ $Env:HF_HOME = "huggingface"
 $Env:HF_ENDPOINT = "https://hf-mirror.com"
 $Env:PIP_DISABLE_PIP_VERSION_CHECK = 1
 $Env:PIP_NO_CACHE_DIR = 1
-#$Env:UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple/"
+$Env:UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple/"
 $Env:UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cu130"
 #$Env:UV_CACHE_DIR="./.cache"
 $Env:UV_NO_CACHE=0
@@ -28,17 +28,16 @@ function Check {
 
 try {
     uv --version
-    uv self update
     Write-Output "uv installed|UVģ���Ѱ�װ."
 }
 catch {
     Write-Output "Installing uv|��װuvģ����..."
     if ($Env:OS -ilike "*windows*") {
-        powershell -ExecutionPolicy ByPass -c "./uv-installer.ps1"
+        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
         Check "Install failed|��װuvģ��ʧ�ܡ�"
     }
     else {
-        sh "./uv-installer.sh"
+        curl -LsSf https://astral.sh/uv/install.sh | sh
         Check "Install failed|��װuvģ��ʧ�ܡ�"
     }
 }

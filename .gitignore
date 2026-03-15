@@ -163,7 +163,7 @@ cython_debug/
 
 datasets/
 huggingface/
-.lance*
-.lance
-.lance/
+*.lance*
+*.lance*/
 output/
+.projection_cache/

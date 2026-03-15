@@ -3,6 +3,10 @@ import lance
 import torch
 import io
 import base64
+from runtime_env import configure_runtime_env
+
+configure_runtime_env()
+
 from model import CSD_CLIP
 from transformers import CLIPProcessor
 from pipeline import CSDCLIPPipeline
@@ -10,10 +14,12 @@ from datasets import CustomDataset
 from rich.progress import Progress
 from dash_page import make_dash_kmeans, make_multi_view_dash
 from lancedatasets import transform2lance
+from embedding_storage import build_embedding_table
+from precision_utils import resolve_amp_dtype
+from view_specs import build_default_view_specs
 from PIL import Image
 import numpy as np
 
-import pyarrow as pa
 import umap
 import argparse
 
@@ -157,6 +163,19 @@ if __name__ == "__main__":
         default=None,
         help="Override checkpoint_path in sd_config.yaml (optional)",
     )
+    parser.add_argument(
+        "--precision",
+        type=str,
+        default="auto",
+        choices=["auto", "fp32", "fp16", "bf16"],
+        help="Inference precision. 'auto' uses fp16 on CUDA and fp32 otherwise.",
+    )
+    parser.add_argument(
+        "--finch_partition_index",
+        type=int,
+        default=1,
+        help="FINCH hierarchy partition index. 1 is the default, 0 is the finest partition.",
+    )
 
     args = parser.parse_args()
 
@@ -168,22 +187,39 @@ if __name__ == "__main__":
         transform2lance(args.train_data_dir)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    amp_dtype = resolve_amp_dtype(device, args.precision)
 
     if args.model_type == "csd":
         model = CSD_CLIP.from_pretrained(args.model_name)
         model.to(device)
         processor = CLIPProcessor.from_pretrained(args.processor_name)
-        pipeline = CSDCLIPPipeline(model=model, processor=processor, device=device)
+        pipeline = CSDCLIPPipeline(
+            model=model,
+            processor=processor,
+            device=device,
+            amp_dtype=amp_dtype,
+        )
     else:
         from sd_pipeline import StyleDecouplerPipeline
         pipeline = StyleDecouplerPipeline.from_config(
-            args.sd_config, args.sd_checkpoint, device=device
+            args.sd_config,
+            args.sd_checkpoint,
+            device=device,
+            amp_dtype=amp_dtype,
         )
 
     dataset = CustomDataset(args.dataset_path)
 
     if os.path.exists(args.embeddings_path):
         embeddingslance = lance.dataset(args.embeddings_path)
+        schema_names = set(embeddingslance.schema.names)
+        if {"style_embedding", "content_embedding"} - schema_names:
+            print(
+                "Warning: cached embeddings dataset does not contain raw embedding columns."
+            )
+            print(
+                "Clustering will fall back to the stored 2D projection until you regenerate the cache."
+            )
     else:
         dataloader = torch.utils.data.DataLoader(
             dataset,
@@ -203,14 +239,25 @@ if __name__ == "__main__":
                 "[green]Generating embeddings...", total=len(dataloader)
             )
             for data in dataloader:
+                paths = []
+                model_images = []
+                preview_images = []
+
                 for path, image in data:
-                    if args.model_type == "csd":
-                        image = preprocess_image(image)
-                    outputs = pipeline(image)
-                    style_outputs = outputs["style_output"].squeeze(0)
-                    content_outputs = outputs["content_output"].squeeze(0)
-                    style_embeddings.append(style_outputs)
-                    content_embeddings.append(content_outputs)
+                    prepared_image = (
+                        preprocess_image(image) if args.model_type == "csd" else image
+                    )
+                    paths.append(path)
+                    model_images.append(prepared_image)
+                    preview_images.append(prepared_image)
+
+                outputs = pipeline(model_images)
+                style_outputs = np.asarray(outputs["style_output"])
+                content_outputs = np.asarray(outputs["content_output"])
+                style_embeddings.extend(style_outputs)
+                content_embeddings.extend(content_outputs)
+
+                for path, image in zip(paths, preview_images):
                     buffer = io.BytesIO()
                     image = resize_and_remove_borders(image)
                     image.save(buffer, format="JPEG")
@@ -221,39 +268,28 @@ if __name__ == "__main__":
 
         print("Embeddings generated successfully!")
         print("Saving embeddings to disk...")
+        style_embedding_array = np.asarray(style_embeddings, dtype=np.float32)
+        content_embedding_array = np.asarray(content_embeddings, dtype=np.float32)
         reducer = umap.UMAP(
             n_components=2,
             metric="cosine",
             random_state=42,
         )
-        style_umap_results = reducer.fit_transform(np.array(style_embeddings))
-        content_umap_results = reducer.fit_transform(np.array(content_embeddings))
+        style_umap_results = reducer.fit_transform(style_embedding_array)
+        content_umap_results = reducer.fit_transform(content_embedding_array)
 
-        new_data = pa.table(
-            {
-                "path": pa.array(pathlist),
-                "image": pa.array(imagelist),
-                "x1": pa.array(style_umap_results[:, 0]),
-                "y1": pa.array(style_umap_results[:, 1]),
-                "x2": pa.array(content_umap_results[:, 0]),
-                "y2": pa.array(content_umap_results[:, 1]),
-            }
+        new_data = build_embedding_table(
+            pathlist=pathlist,
+            imagelist=imagelist,
+            style_embeddings=style_embedding_array,
+            content_embeddings=content_embedding_array,
+            style_projection=style_umap_results,
+            content_projection=content_umap_results,
         )
 
         embeddingslance = lance.write_dataset(new_data, args.embeddings_path)
 
     model_label = args.model_type.upper()
-    titles = [
-        f"[{model_label}] KMeans_style",
-        f"[{model_label}] HDBSCAN_style",
-        f"[{model_label}] KMeans_content",
-        f"[{model_label}] HDBSCAN_content",
-    ]
-    params_list = [
-        {"k": args.k_clusters, "hdbscan": False, "feature_set": "1"},
-        {"k": args.k_clusters, "hdbscan": True, "feature_set": "1"},
-        {"k": args.k_clusters, "hdbscan": False, "feature_set": "2"},
-        {"k": args.k_clusters, "hdbscan": True, "feature_set": "2"},
-    ]
+    titles, params_list = build_default_view_specs(model_label, args.k_clusters)
     make_multi_view_dash(embeddingslance, titles, params_list, args)
     # make_dash_kmeans(embeddingslance, "style", k=args.k_clusters, output_dir=args.style_ouput_dir)
