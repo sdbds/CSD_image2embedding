@@ -5,13 +5,13 @@ $Env:HF_ENDPOINT = "https://hf-mirror.com"
 $Env:PIP_DISABLE_PIP_VERSION_CHECK = 1
 $Env:PIP_NO_CACHE_DIR = 1
 #$Env:UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple/"
-$Env:UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cu124"
-$Env:UV_CACHE_DIR="./.cache"
+$Env:UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cu130"
+#$Env:UV_CACHE_DIR="./.cache"
 $Env:UV_NO_CACHE=0
 $Env:UV_LINK_MODE="copy"
 $Env:FAISS_ENABLE_GPU="ON"
 function InstallFail {
-    Write-Output "Install failed¡£"
+    Write-Output "Install failedï¿½ï¿½"
     Read-Host | Out-Null ;
     Exit
 }
@@ -27,19 +27,19 @@ function Check {
 }
 
 try {
-    ~/.cargo/bin/uv --version
-    ~/.cargo/bin/uv self update
-    Write-Output "uv installed|UVÄ£¿éÒÑ°²×°."
+    uv --version
+    uv self update
+    Write-Output "uv installed|UVÄ£ï¿½ï¿½ï¿½Ñ°ï¿½×°."
 }
 catch {
-    Write-Output "Installing uv|°²×°uvÄ£¿éÖÐ..."
+    Write-Output "Installing uv|ï¿½ï¿½×°uvÄ£ï¿½ï¿½ï¿½ï¿½..."
     if ($Env:OS -ilike "*windows*") {
         powershell -ExecutionPolicy ByPass -c "./uv-installer.ps1"
-        Check "Install failed|°²×°uvÄ£¿éÊ§°Ü¡£"
+        Check "Install failed|ï¿½ï¿½×°uvÄ£ï¿½ï¿½Ê§ï¿½Ü¡ï¿½"
     }
     else {
         sh "./uv-installer.sh"
-        Check "Install failed|°²×°uvÄ£¿éÊ§°Ü¡£"
+        Check "Install failed|ï¿½ï¿½×°uvÄ£ï¿½ï¿½Ê§ï¿½Ü¡ï¿½"
     }
 }
 
@@ -53,7 +53,7 @@ if ($env:OS -ilike "*windows*") {
         . ./.venv/Scripts/activate
     }else{
         Write-Output "Create .venv"
-        ~\.cargo\bin\uv.exe venv -p 3.10
+        uv venv -p 3.11
         . ./.venv/Scripts/activate
     }
 }
@@ -67,17 +67,14 @@ elseif (Test-Path "./.venv/bin/activate") {
 }
 else{
     Write-Output "Create .venv"
-    ~/.cargo/bin/uv venv -p 3.10
+    uv venv -p 3.11
     . ./.venv/bin/activate.ps1
 }
 
-Write-Output "Requirements installing|°²×°³ÌÐòËùÐèÒÀÀµ"
+Write-Output "Requirements installing|ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½"
 
-~/.cargo/bin/uv pip sync ./requirements-uv.txt --index-strategy unsafe-best-match
-Check "Requirements install failed|»·¾³°²×°Ê§°Ü¡£"
-
-Write-Output "Clean cache"
-~/.cargo/bin/uv cache clean
+uv pip sync ./requirements-uv.txt --index-strategy unsafe-best-match
+Check "Requirements install failed|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°Ê§ï¿½Ü¡ï¿½"
 
 Write-Output "Install finished"
 Read-Host | Out-Null ;

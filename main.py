@@ -138,18 +138,47 @@ if __name__ == "__main__":
         action="store_true",
         help="Create symlinks instead of copying images",
     )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="csd",
+        choices=["csd", "sd"],
+        help="Backend model: 'csd' (default) or 'sd' (StyleDecoupler DINOv3+SigLIP2)",
+    )
+    parser.add_argument(
+        "--sd_config",
+        type=str,
+        default="sd_config.yaml",
+        help="Path to sd_config.yaml (used when --model_type=sd)",
+    )
+    parser.add_argument(
+        "--sd_checkpoint",
+        type=str,
+        default=None,
+        help="Override checkpoint_path in sd_config.yaml (optional)",
+    )
 
     args = parser.parse_args()
+
+    # Append model_type suffix to embeddings_path to avoid overwriting
+    if args.embeddings_path == "embeddings.lance":
+        args.embeddings_path = f"embeddings_{args.model_type}.lance"
 
     if not os.path.exists(args.dataset_path):
         transform2lance(args.train_data_dir)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = CSD_CLIP.from_pretrained(args.model_name)
-    model.to(device)
 
-    processor = CLIPProcessor.from_pretrained(args.processor_name)
-    pipeline = CSDCLIPPipeline(model=model, processor=processor, device=device)
+    if args.model_type == "csd":
+        model = CSD_CLIP.from_pretrained(args.model_name)
+        model.to(device)
+        processor = CLIPProcessor.from_pretrained(args.processor_name)
+        pipeline = CSDCLIPPipeline(model=model, processor=processor, device=device)
+    else:
+        from sd_pipeline import StyleDecouplerPipeline
+        pipeline = StyleDecouplerPipeline.from_config(
+            args.sd_config, args.sd_checkpoint, device=device
+        )
 
     dataset = CustomDataset(args.dataset_path)
 
@@ -175,7 +204,8 @@ if __name__ == "__main__":
             )
             for data in dataloader:
                 for path, image in data:
-                    image = preprocess_image(image)
+                    if args.model_type == "csd":
+                        image = preprocess_image(image)
                     outputs = pipeline(image)
                     style_outputs = outputs["style_output"].squeeze(0)
                     content_outputs = outputs["content_output"].squeeze(0)
@@ -212,11 +242,12 @@ if __name__ == "__main__":
 
         embeddingslance = lance.write_dataset(new_data, args.embeddings_path)
 
+    model_label = args.model_type.upper()
     titles = [
-        "KMeans_style",
-        "HDBSCAN_style",
-        "KMeans_content",
-        "HDBSCAN_content",
+        f"[{model_label}] KMeans_style",
+        f"[{model_label}] HDBSCAN_style",
+        f"[{model_label}] KMeans_content",
+        f"[{model_label}] HDBSCAN_content",
     ]
     params_list = [
         {"k": args.k_clusters, "hdbscan": False, "feature_set": "1"},

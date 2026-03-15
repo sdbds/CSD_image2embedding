@@ -146,7 +146,10 @@ def find_nearest_images(data, kmeans, feature_set="1"):
             nearest_index = cluster_indices[np.argmin(distances)]
             nearest_images.append(images[nearest_index])
 
-        return nearest_images, np.array(cluster_centers)
+        centers = np.array(cluster_centers)
+        if centers.ndim == 1:
+            centers = centers.reshape(0, 2)
+        return nearest_images, centers
 
 
 def create_dash_fig(
@@ -188,20 +191,21 @@ def create_dash_fig(
     )
 
     # Add cluster centers
-    fig.add_trace(
-        go.Scatter(
-            x=cluster_centers[:, 0],
-            y=cluster_centers[:, 1],
-            mode="markers",
-            marker=dict(
-                symbol="star",
-                size=15,
-                color="black",
-                line=dict(width=2, color="DarkSlateGrey"),
-            ),
-            name="Cluster Centers",
+    if len(cluster_centers) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=cluster_centers[:, 0],
+                y=cluster_centers[:, 1],
+                mode="markers",
+                marker=dict(
+                    symbol="star",
+                    size=15,
+                    color="black",
+                    line=dict(width=2, color="DarkSlateGrey"),
+                ),
+                name="Cluster Centers",
+            )
         )
-    )
 
     # Add cluster centers and images
 
@@ -225,6 +229,8 @@ def create_dash_fig(
         hovertemplate=None,
     )
     # Add images
+    if len(cluster_centers) == 0:
+        return fig
     for i, (cx, cy) in enumerate(cluster_centers):
         fig.add_layout_image(
             dict(
@@ -371,7 +377,7 @@ def make_multi_view_dash(
     print(f"Serving on {url}")
     print(f"To serve this over the Internet, run `ngrok http {port}`")
     webbrowser.open(url)
-    app.run_server(port=port)
+    app.run(port=port)
     return app
 
 
@@ -394,5 +400,5 @@ def make_dash_kmeans(datasets, title, k=50, hdbscan=False, output_dir="output"):
     print(f"Serving on {url}")
     print(f"To serve this over the Internet, run `ngrok http {port}`")
     webbrowser.open(url)
-    app.run_server(port=port)
+    app.run(port=port)
     return app

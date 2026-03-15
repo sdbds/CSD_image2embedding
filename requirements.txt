@@ -11,6 +11,6 @@ pyarrow
 plotly
 dash
 rich
-transformers
+transformers<5.0
 umap-learn
 hdbscan
