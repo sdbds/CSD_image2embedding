@@ -3,6 +3,7 @@ from hdbscan import HDBSCAN
 import numpy as np
 import random
 import socket
+import torch
 from dash import dcc, html, Input, Output, no_update, Dash, callback_context
 import plotly.graph_objects as go
 from PIL import Image
@@ -87,17 +88,58 @@ def create_dash_app(fig, images):
     return app
 
 
+def _to_numpy_array(value, dtype):
+    if hasattr(value, "detach"):
+        value = value.detach().cpu().numpy()
+    return np.asarray(value, dtype=dtype)
+
+
+def _perform_sklearn_kmeans(coords, k, algorithm_name):
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(coords)
+    kmeans.algorithm_name = algorithm_name
+    kmeans.noise_label = None
+    return kmeans
+
+
+def _perform_flash_kmeans(coords, k):
+    from flash_kmeans import FlashKMeans
+
+    flash_kmeans = FlashKMeans(
+        d=coords.shape[1],
+        k=k,
+        seed=42,
+    )
+    flash_kmeans.fit(torch.as_tensor(coords, dtype=torch.float32))
+
+    labels = _to_numpy_array(flash_kmeans.cluster_ids_b, np.int32)
+    centers = _to_numpy_array(flash_kmeans.centroids_b, np.float32)
+    if labels.ndim > 1:
+        labels = labels[0]
+    if centers.ndim > 2:
+        centers = centers[0]
+
+    return GenericClusteringResult(
+        labels_=labels,
+        cluster_centers_=centers,
+        algorithm_name="flash-kmeans",
+        noise_label=None,
+    )
+
+
 def perform_kmeans(data=None, k=40, feature_set="1", coords=None):
     if coords is None:
         coords = get_clustering_coords(data, feature_set=feature_set)
+    coords = np.asarray(coords, dtype=np.float32)
 
-    # Perform k-means clustering
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    kmeans.fit(coords)
-    kmeans.algorithm_name = "kmeans"
-    kmeans.noise_label = None
-
-    return kmeans
+    try:
+        return _perform_flash_kmeans(coords, k)
+    except Exception:
+        return _perform_sklearn_kmeans(
+            coords,
+            k,
+            algorithm_name="kmeans-sklearn-fallback",
+        )
 
 
 def perform_hdbscan(data=None, min_cluster_size=5, feature_set="1", coords=None):

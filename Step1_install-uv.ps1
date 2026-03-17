@@ -10,6 +10,7 @@ $Env:UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cu130"
 $Env:UV_NO_CACHE=0
 $Env:UV_LINK_MODE="copy"
 $Env:FAISS_ENABLE_GPU="ON"
+$flashKMeansSpec = "git+https://github.com/svg-project/flash-kmeans.git@main"
 function InstallFail {
     Write-Output "Install failed��"
     Read-Host | Out-Null ;
@@ -74,6 +75,18 @@ Write-Output "Requirements installing|��װ������������
 
 uv pip sync ./requirements-uv.txt --index-strategy unsafe-best-match
 Check "Requirements install failed|������װʧ�ܡ�"
+
+Write-Output "Installing flash-kmeans backend|��װflash-kmeans���࣮"
+if ($env:OS -ilike "*windows*") {
+    uv pip install triton-windows
+    Check "triton-windows install failed|triton-windows��װʧ�ܡ�"
+}
+else {
+    uv pip install triton
+    Check "triton install failed|triton��װʧ�ܡ�"
+}
+uv pip install --no-deps $flashKMeansSpec
+Check "flash-kmeans install failed|flash-kmeans��װʧ�ܡ�"
 
 Write-Output "Install finished"
 Read-Host | Out-Null ;
