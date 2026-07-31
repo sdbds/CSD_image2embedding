@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -13,6 +14,7 @@ class GenericClusteringResult:
     algorithm_name: str
     cluster_centers_: np.ndarray | None = None
     noise_label: int | None = None
+    implementation: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.labels_ = np.asarray(self.labels_, dtype=np.int32)

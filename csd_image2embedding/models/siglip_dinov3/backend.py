@@ -200,7 +200,24 @@ def validate_checkpoint_provenance(
     provenance: dict,
     *,
     dino_sha256: str | None,
+    siglip_fingerprint: dict[str, object],
 ) -> None:
+    normalization = {
+        "dino_mean": tuple(config.dino_mean),
+        "dino_std": tuple(config.dino_std),
+        "siglip_mean": tuple(config.siglip_mean),
+        "siglip_std": tuple(config.siglip_std),
+    }
+    _assert_contains(
+        {
+            "dino_mean": tuple(IMAGENET_MEAN),
+            "dino_std": tuple(IMAGENET_STD),
+            "siglip_mean": tuple(SIGLIP2_MEAN),
+            "siglip_std": tuple(SIGLIP2_STD),
+        },
+        normalization,
+        "checkpoint preprocessing normalization",
+    )
     dino = {
         "architecture": {
             "feature_dim": config.dino_dim,
@@ -217,9 +234,14 @@ def validate_checkpoint_provenance(
                 "hub_repo": config.dino_hub_repo,
             }
         )
+    siglip = {"architecture": {"feature_dim": config.siglip_dim}}
+    for key in ("artifact_sha256", "file_count"):
+        if key in siglip_fingerprint:
+            siglip[key] = siglip_fingerprint[key]
     expected = {
         "features": {
             "dino": dino,
+            "siglip": siglip,
             "preprocessing": {
                 "dino_image_size": config.dino_image_size,
                 "siglip_image_size": config.siglip_image_size,
@@ -253,29 +275,73 @@ def _read_checkpoint_provenance(path: Path) -> tuple[dict, str]:
     return provenance, actual_digest
 
 
-def _fingerprint_weight_reference(reference: str) -> dict[str, object]:
+def _fingerprint_siglip_reference(
+    reference: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Build checkpoint-compatibility and cache descriptors in one file pass."""
+
     path = Path(reference).expanduser()
     if path.is_file():
-        return {"reference": str(path.resolve()), "sha256": _sha256_file(path)}
+        resolved = path.resolve()
+        file_hash = _sha256_file(resolved)
+        return (
+            {
+                "model_ref": str(resolved),
+                "artifact_sha256": file_hash,
+                "file_count": 1,
+            },
+            {"reference": str(resolved), "sha256": file_hash},
+        )
     if not path.is_dir():
-        return {"reference": reference}
-    weight_files = sorted(
-        candidate
-        for candidate in path.rglob("*")
-        if candidate.is_file()
-        and candidate.suffix.lower() in {".bin", ".pt", ".pth", ".safetensors"}
-    )
-    digest = hashlib.sha256()
-    for weight_file in weight_files:
-        digest.update(weight_file.relative_to(path).as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(_sha256_file(weight_file).encode("ascii"))
-        digest.update(b"\0")
-    return {
-        "reference": str(path.resolve()),
-        "weight_sha256": digest.hexdigest(),
-        "weight_file_count": len(weight_files),
+        return {"model_ref": reference}, {"reference": reference}
+
+    resolved = path.resolve()
+    relevant_suffixes = {
+        ".bin",
+        ".json",
+        ".model",
+        ".pt",
+        ".pth",
+        ".safetensors",
     }
+    artifact_files = sorted(
+        candidate
+        for candidate in resolved.rglob("*")
+        if candidate.is_file() and candidate.suffix.lower() in relevant_suffixes
+    )
+    if not artifact_files:
+        artifact_files = sorted(
+            candidate for candidate in resolved.rglob("*") if candidate.is_file()
+        )
+    weight_suffixes = {".bin", ".pt", ".pth", ".safetensors"}
+    artifact_digest = hashlib.sha256()
+    weight_digest = hashlib.sha256()
+    weight_file_count = 0
+    for file_path in artifact_files:
+        relative_path = file_path.relative_to(resolved).as_posix()
+        file_hash = _sha256_file(file_path)
+        artifact_digest.update(relative_path.encode("utf-8"))
+        artifact_digest.update(b"\0")
+        artifact_digest.update(file_hash.encode("ascii"))
+        artifact_digest.update(b"\0")
+        if file_path.suffix.lower() in weight_suffixes:
+            weight_digest.update(relative_path.encode("utf-8"))
+            weight_digest.update(b"\0")
+            weight_digest.update(file_hash.encode("ascii"))
+            weight_digest.update(b"\0")
+            weight_file_count += 1
+    return (
+        {
+            "model_ref": str(resolved),
+            "artifact_sha256": artifact_digest.hexdigest(),
+            "file_count": len(artifact_files),
+        },
+        {
+            "reference": str(resolved),
+            "weight_sha256": weight_digest.hexdigest(),
+            "weight_file_count": weight_file_count,
+        },
+    )
 
 
 def _resolve_amp_dtype(device, precision: str):
@@ -349,10 +415,18 @@ class SiglipDinoBackend:
             )
         dino_path = Path(config.dino_model_id)
         dino_sha256 = _sha256_file(dino_path) if dino_path.is_file() else None
+        siglip_training_fingerprint, siglip_weight_fingerprint = (
+            _fingerprint_siglip_reference(config.siglip_model_id)
+        )
         provenance, provenance_digest = _read_checkpoint_provenance(
             config.checkpoint_path
         )
-        validate_checkpoint_provenance(config, provenance, dino_sha256=dino_sha256)
+        validate_checkpoint_provenance(
+            config,
+            provenance,
+            dino_sha256=dino_sha256,
+            siglip_fingerprint=siglip_training_fingerprint,
+        )
 
         dino = FrozenDINOv3(
             config.dino_model_id,
@@ -394,7 +468,7 @@ class SiglipDinoBackend:
         fingerprint_payload = {
             "schema_version": BACKEND_SCHEMA_VERSION,
             "dino": dino.provenance,
-            "siglip": _fingerprint_weight_reference(config.siglip_model_id),
+            "siglip": siglip_weight_fingerprint,
             "checkpoint_sha256": _sha256_file(config.checkpoint_path),
             "checkpoint_provenance_digest": provenance_digest,
             "projector": {

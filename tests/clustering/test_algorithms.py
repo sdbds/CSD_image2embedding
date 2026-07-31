@@ -76,6 +76,19 @@ def test_kmeans_falls_back_only_for_documented_flash_runtime_failure():
     assert result.algorithm_name == "kmeans-sklearn-fallback"
 
 
+def test_sklearn_result_records_the_actual_implementation_identity():
+    result = algorithms._perform_sklearn_kmeans(
+        np.array([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]], dtype=np.float32),
+        2,
+        "kmeans-sklearn-fallback",
+    )
+
+    assert result.implementation["distribution"] == "scikit-learn"
+    assert result.implementation["version"]
+    assert len(result.implementation["source_sha256"]) == 64
+    assert len(result.implementation["wrapper_sha256"]) == 64
+
+
 def test_finch_passes_configuration_and_defaults_to_partition_one():
     recorded = {}
 

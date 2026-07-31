@@ -1,13 +1,20 @@
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
+import lance
 import numpy as np
 import pytest
 from PIL import Image
 
 from csd_image2embedding.artifacts import ArtifactStore
+from csd_image2embedding.clustering.analysis import GenericClusteringResult
+from csd_image2embedding.clustering.export import (
+    ExportIdentity,
+    export_clustered_images,
+)
 from csd_image2embedding.data.discovery import discover_directory
-from csd_image2embedding.data.lance import write_source_snapshot
+from csd_image2embedding.data.lance import LanceImageDataset, write_source_snapshot
 from csd_image2embedding.models.base import EmbeddingBatch
 from csd_image2embedding.projection.manager import ProjectionManager
 from csd_image2embedding.workflow import WorkflowSettings, execute_workflow
@@ -44,14 +51,17 @@ def _write_image(path: Path, color: str):
     Image.new("RGB", (3, 2), color).save(path, format="PNG")
 
 
-def _source_fixture(tmp_path):
-    source = tmp_path / "images"
+def _populate_source(source):
     source.mkdir()
     _write_image(source / "a.png", "red")
     _write_image(source / "b.png", "blue")
     (source / "a.txt").write_text("a lake", encoding="utf-8")
     (source / "b.txt").write_text("a city", encoding="utf-8")
     return source
+
+
+def _source_fixture(tmp_path):
+    return _populate_source(tmp_path / "images")
 
 
 def _settings(source, artifact_root, mode="image-only", **changes):
@@ -132,6 +142,39 @@ def test_explicit_lance_is_authoritative_and_never_discovers_directory(
     assert result.embedding_path.is_dir()
 
 
+def test_equal_content_roots_export_from_snapshot_bytes_with_stable_record_ids(
+    tmp_path,
+):
+    first_source = _populate_source(tmp_path / "first")
+    second_source = _populate_source(tmp_path / "second")
+    expected_bytes = {
+        name: (second_source / name).read_bytes() for name in ("a.png", "b.png")
+    }
+    artifact_root = tmp_path / ".artifacts"
+
+    first = _run_fixture(first_source, "image-only", artifact_root)
+    shutil.rmtree(first_source)
+    second = _run_fixture(second_source, "image-only", artifact_root)
+    shutil.rmtree(second_source)
+
+    assert first.source_path == second.source_path
+    dataframe = (
+        lance.dataset(second.embedding_path / "data.lance").to_table().to_pandas()
+    )
+    assert dataframe["path"].tolist() == ["a.png", "b.png"]
+
+    output = export_clustered_images(
+        dataframe,
+        GenericClusteringResult([0, 1], "test-clusterer"),
+        tmp_path / "export",
+        ExportIdentity("emb", "proj", "test-clusterer", {}, 42),
+        source_reader=LanceImageDataset(second.source_path),
+    )
+
+    assert (output / "class_0" / "image_0.png").read_bytes() == expected_bytes["a.png"]
+    assert (output / "class_1" / "image_1.png").read_bytes() == expected_bytes["b.png"]
+
+
 def test_default_directory_run_preserves_legacy_lance_directories(tmp_path):
     source = _source_fixture(tmp_path)
     legacy_source = tmp_path / "datasets.lance"
@@ -146,6 +189,15 @@ def test_default_directory_run_preserves_legacy_lance_directories(tmp_path):
     assert (legacy_source / "sentinel.bin").read_bytes() == b"source-before"
     assert (legacy_embedding / "sentinel.bin").read_bytes() == b"embedding-before"
     assert result.embedding_path.is_relative_to(tmp_path / ".artifacts")
+
+
+def test_source_and_embedding_artifacts_use_the_post_audit_schema(tmp_path):
+    source = _source_fixture(tmp_path)
+
+    result = _run_fixture(source, "image-only", tmp_path / ".artifacts")
+
+    assert "v2" in result.source_path.parts
+    assert result.embedding_identity.schema_version == 3
 
 
 def test_failed_rebuild_keeps_previous_current_artifact(tmp_path):

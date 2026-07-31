@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+
+from PIL import Image
 
 IMAGE_EXTENSIONS = frozenset(
     {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".jxl"}
@@ -27,6 +31,14 @@ class SourceRecord:
 
 
 @dataclass(frozen=True)
+class RejectedSourceRecord:
+    """One image-like file rejected before it can enter a source snapshot."""
+
+    relative_path: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class DirectorySnapshot:
     """A deterministic view of one directory source."""
 
@@ -34,6 +46,7 @@ class DirectorySnapshot:
     image_digest: str
     caption_digest: str
     caption_counts: dict[str, int]
+    rejected_records: tuple[RejectedSourceRecord, ...] = ()
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -81,8 +94,21 @@ def discover_directory(root: Path) -> DirectorySnapshot:
     )
 
     records: list[SourceRecord] = []
+    rejected_records: list[RejectedSourceRecord] = []
     for image_path in image_paths:
         relative_path = image_path.relative_to(root).as_posix()
+        try:
+            image_bytes = image_path.read_bytes()
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                image.load()
+        except (OSError, SyntaxError) as error:
+            rejected_records.append(
+                RejectedSourceRecord(
+                    relative_path=relative_path,
+                    reason=f"{type(error).__name__}: {error}",
+                )
+            )
+            continue
         caption, caption_status = read_caption(image_path.with_suffix(".txt"))
         caption_sha256 = (
             _sha256_bytes(caption.encode("utf-8")) if caption is not None else None
@@ -91,7 +117,7 @@ def discover_directory(root: Path) -> DirectorySnapshot:
             SourceRecord(
                 relative_path=relative_path,
                 image_path=image_path,
-                image_sha256=_sha256_bytes(image_path.read_bytes()),
+                image_sha256=_sha256_bytes(image_bytes),
                 caption=caption,
                 caption_sha256=caption_sha256,
                 caption_status=caption_status,
@@ -107,9 +133,19 @@ def discover_directory(root: Path) -> DirectorySnapshot:
         status: sum(record.caption_status == status for record in records)
         for status in ("valid", "missing", "empty", "unreadable")
     }
+    if rejected_records:
+        details = "\n".join(
+            f"- {record.relative_path}: {record.reason}" for record in rejected_records
+        )
+        warnings.warn(
+            f"Skipped unreadable images:\n{details}",
+            UserWarning,
+            stacklevel=2,
+        )
     return DirectorySnapshot(
         records=tuple(records),
         image_digest=_digest_json_rows(image_rows),
         caption_digest=_digest_json_rows(caption_rows),
         caption_counts=caption_counts,
+        rejected_records=tuple(rejected_records),
     )

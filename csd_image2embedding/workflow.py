@@ -82,6 +82,7 @@ class _ResolvedSource:
     image_digest: str
     caption_digest: str
     caption_counts: dict[str, int]
+    source_root: Path | None = None
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -107,7 +108,7 @@ def _write_synced_json(path: Path, value: object) -> None:
 def _source_identity(kind: str, image_digest: str, caption_digest: str) -> str:
     return _digest(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "input_kind": kind,
             "image_digest": image_digest,
             "caption_digest": caption_digest,
@@ -124,14 +125,14 @@ def _ensure_directory_snapshot(
     source_root = (
         artifact_root
         / "sources"
-        / "v1"
+        / "v2"
         / snapshot.image_digest
         / snapshot.caption_digest
     )
     data_path = source_root / "data.lance"
     manifest_path = source_root / "manifest.json"
     expected_manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "input_kind": "directory",
         "image_digest": snapshot.image_digest,
         "caption_digest": snapshot.caption_digest,
@@ -178,6 +179,7 @@ def _resolve_source(settings: WorkflowSettings) -> _ResolvedSource:
             image_digest=identity.image_digest,
             caption_digest=identity.caption_digest,
             caption_counts=identity.caption_counts,
+            source_root=None,
         )
 
     snapshot = discover_directory(Path(settings.train_data_dir))
@@ -193,6 +195,7 @@ def _resolve_source(settings: WorkflowSettings) -> _ResolvedSource:
         image_digest=snapshot.image_digest,
         caption_digest=snapshot.caption_digest,
         caption_counts=snapshot.caption_counts,
+        source_root=Path(settings.train_data_dir).expanduser().resolve(),
     )
 
 
@@ -213,7 +216,7 @@ def _validate_caption_coverage(source: _ResolvedSource, mode: str) -> None:
 
 def _mode_input_digest(source: _ResolvedSource, mode: str) -> str:
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "input_kind": source.input_kind,
         "image_digest": source.image_digest,
     }
@@ -364,6 +367,7 @@ class WorkflowViewService:
         projection_manager,
         settings: WorkflowSettings,
         embedding_manifest_digest: str,
+        source: _ResolvedSource,
     ):
         from .dashboard.app import (
             DEFAULT_FINCH_PARTITION_OPTIONS,
@@ -374,6 +378,7 @@ class WorkflowViewService:
         self.projection_manager = projection_manager
         self.settings = settings
         self.embedding_manifest_digest = embedding_manifest_digest
+        self.source = source
         titles, parameter_sets = build_default_view_specs(
             settings.backend.upper(), settings.k_clusters
         )
@@ -433,6 +438,7 @@ class WorkflowViewService:
         from .clustering.export import ExportIdentity, export_clustered_images
         from .dashboard.app import build_view_output_dir
         from .dashboard.figures import create_cluster_figure
+        from .data.lance import LanceImageDataset
 
         spec = self.projection_manager.build_spec(
             reducer_name, random_state=self.settings.random_state
@@ -473,6 +479,7 @@ class WorkflowViewService:
                 result.algorithm_name,
                 parameters,
                 self.settings.random_state,
+                implementation=result.implementation,
             )
             export_clustered_images(
                 self.base_dataframe,
@@ -485,6 +492,8 @@ class WorkflowViewService:
                 ),
                 identity,
                 self.settings.symlink,
+                source_reader=LanceImageDataset(self.source.dataset_path),
+                source_root=self.source.source_root,
             )
         value = (figure, projected["image"].tolist())
         self._cache[cache_key] = value
@@ -535,7 +544,7 @@ def execute_workflow(
         preprocessing_digest=getattr(
             backend, "preprocessing_fingerprint", backend.fingerprint
         ),
-        schema_version=2,
+        schema_version=3,
     )
     store = ArtifactStore(Path(settings.artifact_root))
     embedding_path = None if settings.rebuild else store.resolve(identity)
@@ -573,6 +582,7 @@ def execute_workflow(
         projection_manager,
         settings,
         embedding_manifest_digest,
+        source,
     )
     result = WorkflowResult(
         input_kind=source.input_kind,

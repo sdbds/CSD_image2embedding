@@ -196,9 +196,10 @@ checkpoint_path: "./checkpoints/checkpoint_best.safetensors"
     )
 
 
-def test_checkpoint_provenance_ignores_host_paths_but_rejects_model_contract():
+def _checkpoint_contract():
     config = SimpleNamespace(
         dino_model_id="D:/models/dinov3.pth",
+        siglip_model_id="D:/models/siglip2",
         dino_hub_model="dinov3_vitl16",
         dino_hub_repo="facebookresearch/dinov3:commit",
         dino_dim=4,
@@ -208,6 +209,10 @@ def test_checkpoint_provenance_ignores_host_paths_but_rejects_model_contract():
         projector_dropout=0.0,
         dino_image_size=4,
         siglip_image_size=5,
+        dino_mean=(0.485, 0.456, 0.406),
+        dino_std=(0.229, 0.224, 0.225),
+        siglip_mean=(0.5, 0.5, 0.5),
+        siglip_std=(0.5, 0.5, 0.5),
     )
     provenance = {
         "features": {
@@ -224,6 +229,13 @@ def test_checkpoint_provenance_ignores_host_paths_but_rejects_model_contract():
                     "positional_encoding": "rope",
                 },
             },
+            "siglip": {
+                "model_ref": "/training-host/siglip2",
+                "configured_ref": "./siglip2",
+                "artifact_sha256": "siglip-sha",
+                "file_count": 7,
+                "architecture": {"feature_dim": 4},
+            },
             "preprocessing": {
                 "dino_image_size": 4,
                 "siglip_image_size": 5,
@@ -239,9 +251,61 @@ def test_checkpoint_provenance_ignores_host_paths_but_rejects_model_contract():
             "dropout": 0.0,
         },
     }
+    return config, provenance
 
-    validate_checkpoint_provenance(config, provenance, dino_sha256="dino-sha")
+
+def test_checkpoint_provenance_ignores_host_paths_but_rejects_model_contract():
+    config, provenance = _checkpoint_contract()
+
+    validate_checkpoint_provenance(
+        config,
+        provenance,
+        dino_sha256="dino-sha",
+        siglip_fingerprint={
+            "artifact_sha256": "siglip-sha",
+            "file_count": 7,
+        },
+    )
 
     provenance["projector"]["output_dim"] = 5
     with pytest.raises(ValueError, match=r"projector\.output_dim"):
-        validate_checkpoint_provenance(config, provenance, dino_sha256="dino-sha")
+        validate_checkpoint_provenance(
+            config,
+            provenance,
+            dino_sha256="dino-sha",
+            siglip_fingerprint={
+                "artifact_sha256": "siglip-sha",
+                "file_count": 7,
+            },
+        )
+
+
+def test_checkpoint_provenance_rejects_a_different_runtime_siglip_artifact():
+    config, provenance = _checkpoint_contract()
+
+    with pytest.raises(ValueError, match=r"features\.siglip\.artifact_sha256"):
+        validate_checkpoint_provenance(
+            config,
+            provenance,
+            dino_sha256="dino-sha",
+            siglip_fingerprint={
+                "artifact_sha256": "different-siglip-sha",
+                "file_count": 7,
+            },
+        )
+
+
+def test_checkpoint_provenance_rejects_non_training_image_normalization():
+    config, provenance = _checkpoint_contract()
+    config.siglip_mean = (0.4, 0.5, 0.5)
+
+    with pytest.raises(ValueError, match="siglip_mean"):
+        validate_checkpoint_provenance(
+            config,
+            provenance,
+            dino_sha256="dino-sha",
+            siglip_fingerprint={
+                "artifact_sha256": "siglip-sha",
+                "file_count": 7,
+            },
+        )

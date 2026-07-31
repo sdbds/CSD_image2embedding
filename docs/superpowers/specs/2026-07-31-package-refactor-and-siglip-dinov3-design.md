@@ -198,6 +198,13 @@ Input identity is split by dependency instead of using one coarse dataset hash:
 Editing a caption cannot force an expensive CSD or SigLIP image-only embedding
 rebuild, but it always invalidates a caption-guided artifact.
 
+Discovery decodes candidate images before they enter the accepted record set.
+Unreadable files are reported with their relative paths and reasons, but do not
+participate in image digests, caption coverage, or row counts. Embedded Lance
+rows are fingerprinted from their actual image bytes. Path-only rows are read
+and checked against their declared hashes both during fingerprinting and again
+when consumed.
+
 ### Model Backends
 
 All inference implementations satisfy one protocol:
@@ -322,7 +329,7 @@ Each generated artifact is a versioned container directory with its data and
 manifest owned together:
 
 ```text
-.artifacts/embeddings/v2/<input-digest>/<backend>/<mode>/<model-digest>/
+.artifacts/embeddings/v3/<input-digest>/<backend>/<mode>/<model-digest>/
 |-- current.json
 `-- builds/
     `-- <build-digest>/
@@ -364,9 +371,13 @@ Projection cache identity hashes all inputs that can change its result:
 - projection cache schema version.
 
 Export paths use a run identity containing the embedding digest, projection
-identity, clustering algorithm and parameters, seed, and export schema version.
-Every export directory has a run manifest. A nonempty directory with a different
-identity is rejected rather than partially skipped or mixed with new images.
+identity, clustering algorithm and parameters, actual implementation version
+and source digest, seed, and export schema version. Files are written to a
+sibling temporary directory from authoritative source-snapshot bytes; the
+complete inventory manifest is written last, then the directory is atomically
+renamed. A nonempty, partial, or differently identified directory is rejected
+rather than skipped or mixed with new images. Symlink exports revalidate the
+active file against the authoritative source hash before linking.
 
 ## Dashboard Refactor
 

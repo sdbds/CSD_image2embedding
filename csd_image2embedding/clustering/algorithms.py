@@ -2,10 +2,48 @@
 
 from __future__ import annotations
 
+import hashlib
+import inspect
+from importlib import metadata
+from pathlib import Path
+
 import numpy as np
 from sklearn.cluster import KMeans
 
 from .analysis import GenericClusteringResult, get_clustering_coords
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _implementation_descriptor(
+    algorithm_name: str,
+    implementation,
+    distribution: str,
+) -> dict[str, str]:
+    try:
+        version = metadata.version(distribution)
+    except metadata.PackageNotFoundError:
+        version = "unknown"
+    try:
+        source_path = Path(inspect.getsourcefile(implementation) or "")
+        source_sha256 = (
+            _sha256_file(source_path) if source_path.is_file() else "unknown"
+        )
+    except (OSError, TypeError):
+        source_sha256 = "unknown"
+    return {
+        "algorithm": algorithm_name,
+        "distribution": distribution,
+        "version": version,
+        "source_sha256": source_sha256,
+        "wrapper_sha256": _sha256_file(Path(__file__)),
+    }
 
 
 def _to_numpy_array(value, dtype) -> np.ndarray:
@@ -21,6 +59,9 @@ def _perform_sklearn_kmeans(coords, k: int, algorithm_name: str):
         labels_=model.labels_,
         cluster_centers_=model.cluster_centers_,
         algorithm_name=algorithm_name,
+        implementation=_implementation_descriptor(
+            algorithm_name, KMeans, "scikit-learn"
+        ),
     )
 
 
@@ -40,6 +81,9 @@ def _perform_flash_kmeans(coords, k: int):
         labels_=labels,
         cluster_centers_=centers,
         algorithm_name="flash-kmeans",
+        implementation=_implementation_descriptor(
+            "flash-kmeans", FlashKMeans, "flash-kmeans"
+        ),
     )
 
 
@@ -72,6 +116,7 @@ def perform_hdbscan(
         labels_=model.labels_,
         algorithm_name="hdbscan",
         noise_label=-1,
+        implementation=_implementation_descriptor("hdbscan", HDBSCAN, "hdbscan"),
     )
 
 
@@ -147,4 +192,8 @@ def perform_finch(
         partition_index,
     )
     _, normalized = np.unique(selected, return_inverse=True)
-    return GenericClusteringResult(normalized, "finch")
+    return GenericClusteringResult(
+        normalized,
+        "finch",
+        implementation=_implementation_descriptor("finch", FINCH, "finch-clust"),
+    )
