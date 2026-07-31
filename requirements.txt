@@ -6,6 +6,9 @@ datasets
 tqdm
 clip @ git+https://github.com/openai/CLIP.git@main
 torch
+torchvision
+safetensors
+PyYAML
 pylance
 pyarrow
 plotly

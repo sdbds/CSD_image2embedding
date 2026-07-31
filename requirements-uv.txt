@@ -253,6 +253,7 @@ python-dateutil==2.9.0.post0
     #   pandas
 pyyaml==6.0.3
     # via
+    #   -r requirements.txt
     #   datasets
     #   huggingface-hub
     #   transformers
@@ -275,7 +276,9 @@ retrying==1.4.2
 rich==14.3.3
     # via -r requirements.txt
 safetensors==0.7.0
-    # via transformers
+    # via
+    #   -r requirements.txt
+    #   transformers
 scikit-learn==1.8.0
     # via
     #   -r requirements.txt
@@ -330,7 +333,9 @@ torch==2.10.0
     #   clip
     #   torchvision
 torchvision==0.25.0
-    # via clip
+    # via
+    #   -r requirements.txt
+    #   clip
 tqdm==4.67.3
     # via
     #   -r requirements.txt
