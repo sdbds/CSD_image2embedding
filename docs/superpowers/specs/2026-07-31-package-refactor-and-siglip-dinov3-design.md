@@ -35,9 +35,10 @@ inputs are equivalent.
 3. Replace generic and inconsistent names with domain-specific PEP 8 names.
 4. Preserve the existing one-command PowerShell workflow.
 5. Keep the CSD-CLIP backend and add a corrected SigLIP2-DINOv3 backend.
-6. Make SigLIP2-DINOv3 image-only inference the default text mode and use a
-   single sidecar caption as content guidance only when the entire dataset has
-   valid captions.
+6. Make image-only inference the default for every backend. Allow the
+   SigLIP2-DINOv3 backend to use a single sidecar caption as content guidance
+   only when the user explicitly selects caption-guided mode and every record
+   has a valid caption.
 7. Fail closed when model architecture, weights, preprocessing, or cached
    embeddings are incompatible.
 8. Add executable formatting, linting, and test conventions suitable for a
@@ -48,8 +49,12 @@ inputs are equivalent.
 - Modify the external `D:\styledecouple_dinov3` working tree.
 - Add ConvRot8 bundle inference in this change.
 - Train or fine-tune DINOv3, SigLIP2, CSD-CLIP, or the alignment projector.
-- Automatically split a generic prompt into style and content descriptions.
+- Infer the semantic role of a generic prompt from the presence of a `.txt`
+  file, or automatically split a prompt into style and content descriptions.
 - Mix image-only and caption-guided embeddings within one dataset run.
+- Pin or fingerprint mutable Hugging Face revisions, tokenizer assets, or the
+  tokenization policy in this change. Reproducible production runs use local
+  model assets; remote IDs remain a best-effort convenience.
 - Redesign the visual appearance or feature set of the Dash application.
 - Change clustering or projection mathematics except where required to isolate
   their modules and validate inputs.
@@ -62,6 +67,10 @@ Keep the inference runtime needed by this application inside an isolated
 `models/siglip_dinov3` package. Port the corrected upstream loader,
 preprocessing, projector, and model math together with focused regression tests.
 The application remains runnable without importing an external source checkout.
+Because the upstream working tree is not clean, the port also records its source
+HEAD, a digest of the source diff, per-file source and destination hashes,
+license, and a short synchronization procedure. The vendored snapshot, not the
+mutable external directory, is the implementation reference after the port.
 
 ### Rejected: Install the Upstream Repository
 
@@ -83,23 +92,16 @@ csd_image2embedding/
 |-- __init__.py
 |-- __main__.py
 |-- cli.py
-|-- settings.py
 |-- workflow.py
+|-- artifacts.py
 |-- data/
 |   |-- __init__.py
 |   |-- discovery.py
-|   |-- image_dataset.py
-|   |-- lance_store.py
-|   |-- manifests.py
-|   `-- export.py
+|   `-- lance.py
 |-- models/
 |   |-- __init__.py
 |   |-- base.py
-|   |-- registry.py
-|   |-- csd_clip/
-|   |   |-- __init__.py
-|   |   |-- backend.py
-|   |   `-- model.py
+|   |-- csd.py
 |   `-- siglip_dinov3/
 |       |-- __init__.py
 |       |-- backend.py
@@ -110,26 +112,26 @@ csd_image2embedding/
 |-- clustering/
 |   |-- __init__.py
 |   |-- algorithms.py
-|   |-- coordinates.py
-|   |-- results.py
+|   |-- analysis.py
 |   `-- export.py
 |-- projection/
 |   |-- __init__.py
 |   |-- algorithms.py
-|   |-- cache.py
 |   `-- manager.py
 `-- dashboard/
     |-- __init__.py
     |-- app.py
-    |-- callbacks.py
-    |-- figures.py
-    |-- layout.py
-    `-- views.py
+    `-- figures.py
 ```
 
 The package remains directly below the repository root instead of using a
 `src/` directory. This keeps `python -m csd_image2embedding` runnable from a
 fresh checkout without an editable install or `PYTHONPATH` mutation.
+
+This layout is an upper bound, not a demand to create empty abstractions.
+Modules are created only when the corresponding responsibility moves. Small
+types and helpers stay with their owner until a second real consumer justifies
+another boundary.
 
 ## Module Boundaries
 
@@ -139,7 +141,7 @@ fresh checkout without an editable install or `PYTHONPATH` mutation.
 arguments into typed settings. `workflow.py` owns the high-level sequence:
 
 1. discover or load the input dataset;
-2. resolve one backend and one dataset-wide text mode;
+2. validate the requested text mode against the selected backend's capabilities;
 3. validate or generate embeddings;
 4. launch projections, clustering, export, and the dashboard.
 
@@ -149,13 +151,19 @@ No model, Dash, or large optional dependency is imported merely to parse
 The public options become:
 
 - `--backend csd|siglip-dinov3`;
-- `--text-mode auto|image-only|caption-guided`;
+- `--text-mode image-only|caption-guided`, defaulting to `image-only`;
 - `--style-model-config <path>`;
 - `--rebuild` to replace incompatible generated artifacts explicitly.
 
 The existing `--model_type csd|sd` spelling remains as a temporary hidden alias
 so old scripts fail gracefully during migration. `Step2_embedding.ps1` and the
-README use the new names.
+README use the new names. CSD supports only `image-only`; requesting
+`caption-guided` with CSD fails before importing or loading a model.
+
+The explicit requirement that no Python file remain at the repository root
+means `python main.py` is an intentional entry-point break. The supported
+one-command PowerShell workflow remains compatible, and the old option spelling
+continues to work through the package entry point for one migration cycle.
 
 ### Data
 
@@ -167,11 +175,28 @@ failure.
 
 `ImageRecord` contains the canonical path, image bytes or load handle, optional
 caption, content hash, and source metadata. Lance serialization is owned only by
-`lance_store.py`; model and dashboard modules never call Lance directly.
+`data/lance.py`; model and dashboard modules never call Lance directly.
 
-The dataset fingerprint is derived from sorted relative paths, image content
-hashes, and caption content hashes. Adding, deleting, replacing, or editing a
-caption therefore invalidates dependent artifacts.
+Directory input and explicit Lance input have different source-of-truth rules:
+
+- For a directory input, the directory is authoritative. Every run performs
+  deterministic discovery and hashes the sorted image files before reusing a
+  generated Lance snapshot. The snapshot manifest is compared with the active
+  source before any embedding cache is accepted. Adding, deleting, or replacing
+  an image therefore invalidates the snapshot.
+- For an explicitly supplied external Lance path, the Lance rows and schema are
+  authoritative. The application fingerprints that immutable input and does not
+  claim to detect later changes in an unrelated source directory.
+
+Input identity is split by dependency instead of using one coarse dataset hash:
+
+- `image_digest` covers ordered relative paths and image content hashes;
+- `caption_digest` covers sidecar presence and caption content;
+- image-only artifacts depend only on `image_digest`;
+- caption-guided artifacts depend on both digests.
+
+Editing a caption cannot force an expensive CSD or SigLIP image-only embedding
+rebuild, but it always invalidates a caption-guided artifact.
 
 ### Model Backends
 
@@ -181,6 +206,7 @@ All inference implementations satisfy one protocol:
 class EmbeddingBackend(Protocol):
     name: str
     fingerprint: str
+    supported_text_modes: frozenset[str]
 
     def encode(self, batch: ImageBatch) -> EmbeddingBatch:
         ...
@@ -194,8 +220,9 @@ storage.
 
 `CSDClipBackend` owns the renamed `CSDClip` model and all CLIP preprocessing.
 `SiglipDinoBackend` owns the corrected dual-encoder runtime and text-mode math.
-The registry maps stable CLI names to backend factories; it does not discover
-arbitrary Python plugins.
+A small explicit factory in `models/__init__.py` maps stable CLI names to those
+two backends; there is no plugin discovery layer. Mode validation happens
+against `supported_text_modes` before the factory loads heavy model assets.
 
 ## SigLIP2-DINOv3 Semantics
 
@@ -212,13 +239,14 @@ style_embedding   = b_bar
 content_embedding = c_bar
 ```
 
-This is the default when there are no captions or caption coverage is partial.
-It is a visual dual-encoder representation and is not labeled `s_pure`.
+This is the default regardless of sidecar coverage. It is a visual dual-encoder
+representation and is not labeled `s_pure`.
 
 ### Caption-Guided Mode
 
-The single generic caption is treated as content guidance, never as a style
-description:
+Caption-guided mode is an explicit experimental request. Selecting it declares
+that every generic sidecar caption should be treated as content guidance, never
+as a style description:
 
 ```text
 content_reference = normalize(c_bar + d_bar)
@@ -234,18 +262,20 @@ The output is named `caption_guided_style`, not the upstream model's full
 `s_pure`. A future dual-caption mode can add the upstream style-text reference
 without changing the backend protocol or stored manifest schema.
 
-### Dataset-Wide Mode Resolution
+### Backend and Dataset Mode Resolution
 
-`auto` resolves exactly once before model loading:
+Mode resolution happens exactly once before model loading:
 
-- zero valid captions: `image-only`;
-- valid caption count equals image count: `caption-guided`;
-- partial coverage: `image-only`, with a summary of valid, missing, empty, and
-  unreadable sidecars.
+- CSD plus `image-only`: accepted, captions ignored;
+- CSD plus `caption-guided`: rejected as an unsupported backend capability;
+- SigLIP2-DINOv3 plus `image-only`: accepted, captions ignored;
+- SigLIP2-DINOv3 plus `caption-guided`: accepted only when every record has a
+  valid nonempty caption.
 
-Explicit `image-only` ignores captions. Explicit `caption-guided` fails before
-inference if any record lacks a valid caption. Different modes are never mixed
-in one embedding table.
+An explicit caption-guided request with partial coverage reports valid, missing,
+empty, and unreadable sidecars, then fails before inference. The presence of a
+`.txt` file never changes the default mode. Different modes are never mixed in
+one embedding table.
 
 ## Corrected Model Loading
 
@@ -263,6 +293,11 @@ Native Hugging Face DINOv3 directories or model IDs remain supported only when
 `config.model_type == "dinov3_vit"` and the expected dimensions and register
 tokens match.
 
+Pinning mutable remote Hugging Face revisions and fingerprinting tokenizer files
+or tokenization policy are intentionally outside this change. A remote ID is a
+best-effort convenience, not a reproducible artifact source. Local model and
+tokenizer directories are the documented path for reproducible runs.
+
 Both DINOv3 and SigLIP2 stay frozen in evaluation mode. The SigLIP runtime loads
 only the model and tokenizer; image preprocessing is defined by this project.
 Transforms use direct square bilinear resize with antialiasing followed by the
@@ -275,46 +310,73 @@ Checkpoint provenance is compared by architecture, model/checkpoint hashes,
 pinned Meta source revision, projector dimensions, and preprocessing settings.
 Machine-specific absolute paths recorded by the training host are not compared.
 
+The port includes `models/siglip_dinov3/UPSTREAM.md` with the external repository
+path, source HEAD, source working-diff digest, copied file list, per-file hashes,
+license reference, and synchronization steps. Tests verify the committed
+vendored hashes. This records the exact corrected runtime even though the source
+working tree was dirty when reviewed.
+
 ## Artifact and Cache Compatibility
 
-Each generated Lance embedding dataset has an adjacent JSON manifest containing:
+Each generated artifact is a versioned container directory with its data and
+manifest owned together:
+
+```text
+.artifacts/embeddings/v2/<input-digest>/<backend>/<mode>/<model-digest>/
+|-- data.lance/
+`-- manifest.json
+```
+
+The application builds a sibling temporary container, closes and validates the
+Lance dataset, writes the manifest, and only then renames the complete container
+into place. A process interruption therefore cannot leave a valid-looking
+dataset paired with a stale or missing manifest.
+
+The embedding manifest contains:
 
 - artifact schema version;
-- dataset fingerprint;
+- input kind and the mode-specific image/caption digests;
 - backend name and model fingerprint;
 - resolved text mode;
 - preprocessing fingerprint;
 - embedding dimensions and row count;
 - creation command and relevant settings.
 
-An old artifact without a manifest is incompatible. A mismatch in any identity
-field is never silently reused. Default generated paths are regenerated when
-`--rebuild` is supplied; an explicitly named incompatible path otherwise fails
-with an actionable error.
+An old artifact without a manifest is incompatible but remains untouched. The
+new default path is derived from schema version and identity, so the first new
+run automatically creates a separate artifact and preserves legacy
+`embeddings_*.lance` data. An explicitly named path with incompatible contents
+fails with an actionable error. `--rebuild` rebuilds the same logical identity
+through a temporary container and atomic replacement; it never mutates a live
+artifact in place.
 
-Projection cache keys use the embedding manifest digest rather than a weak
-sample of vector rows. Export directories include backend and text mode so
-classification results from different feature spaces cannot overwrite one
-another.
+Projection cache identity hashes all inputs that can change its result:
+
+- embedding manifest digest;
+- reducer name and complete canonical parameter mapping;
+- random seed;
+- reducer package and implementation version;
+- projection cache schema version.
+
+Export paths use a run identity containing the embedding digest, projection
+identity, clustering algorithm and parameters, seed, and export schema version.
+Every export directory has a run manifest. A nonempty directory with a different
+identity is rejected rather than partially skipped or mixed with new images.
 
 ## Dashboard Refactor
 
 Clustering algorithms move out of `dash_page.py` into
-`clustering/algorithms.py`. Coordinate selection and representative-image
-selection live in `clustering/coordinates.py`; result adaptation lives in
-`clustering/results.py`.
+`clustering/algorithms.py`. Coordinate selection, result adaptation, and
+representative-image selection move together to `clustering/analysis.py` because
+they operate on the same labels and coordinate arrays. Plot construction moves
+to `dashboard/figures.py`; layout, callbacks, view caching, and server startup
+remain in `dashboard/app.py` until another independent responsibility is proven
+large enough to extract.
 
-The dashboard package has narrow roles:
-
-- `layout.py`: component tree and stable component IDs;
-- `figures.py`: Plotly figure and tooltip construction;
-- `callbacks.py`: callback registration and input validation;
-- `views.py`: view configuration and cached view computation;
-- `app.py`: Dash application construction and server startup.
-
-Dashboard callbacks receive services or callables instead of closing over raw
-Lance datasets and model state. Importing clustering or projection code does not
-import Dash.
+Dashboard callbacks receive services or callables instead of raw Lance datasets
+and model state. Importing clustering or projection code does not import Dash.
+The refactor removes real coupling first instead of pre-creating separate layout,
+callback, and view modules.
 
 ## Naming and Code Standards
 
@@ -343,6 +405,10 @@ single-maintainer repository does not need `CONTRIBUTING.md`.
   run fails if no valid records remain.
 - Explicit caption-guided mode reports the first missing or invalid sidecars and
   the total count, then exits before inference.
+- A backend/text-mode combination outside `supported_text_modes` fails before
+  importing the backend's heavy dependencies.
+- A directory-source snapshot mismatch creates a new versioned input artifact;
+  an explicit external Lance input is never reconciled against a directory.
 - Wrong DINOv3 architecture, incomplete state dictionaries, non-finite outputs,
   and provenance mismatches are fatal.
 - Missing optional reducers appear disabled in the UI with their import reason.
@@ -356,12 +422,19 @@ single-maintainer repository does not need `CONTRIBUTING.md`.
 ### Unit Tests
 
 - deterministic image and sidecar discovery;
-- caption decoding, coverage accounting, and dataset-wide mode resolution;
+- caption decoding and coverage accounting;
+- the complete backend/mode compatibility matrix;
 - image-only and caption-guided tensor math with small fake encoders;
 - strict Meta DINOv3 and native Transformers loader dispatch;
 - rejection of the legacy DINOv2-container path;
 - square transform parity on a non-square synthetic image;
+- separate image and caption digest dependency tests;
+- source-directory change detection and explicit-Lance source behavior;
 - model and artifact fingerprint stability and mismatch rejection;
+- atomic artifact interruption recovery and legacy-cache preservation;
+- projection cache misses for reducer parameter, seed, and version changes;
+- export run-identity mismatch rejection;
+- vendored upstream snapshot hash verification;
 - clustering and projection behavior without importing Dash;
 - dashboard layout, callback, figure, and cache behavior with fakes.
 
@@ -369,6 +442,10 @@ single-maintainer repository does not need `CONTRIBUTING.md`.
 
 - build a tiny Lance input and embedding artifact with a fake backend;
 - run the CLI workflow through embedding storage and projection generation;
+- edit an image and caption independently and verify only dependent artifacts
+  are invalidated;
+- start from legacy `datasets.lance` and `embeddings_*.lance` paths and verify the
+  default command creates versioned artifacts without overwriting them;
 - verify `python -m csd_image2embedding --help` without model loading;
 - verify the PowerShell command construction independently of model weights.
 
@@ -377,21 +454,35 @@ single-maintainer repository does not need `CONTRIBUTING.md`.
 An opt-in test loads the local corrected DINOv3 checkpoint and best projector,
 runs one non-square image through both encoders, and verifies deterministic,
 finite `[1, 1024]` outputs. It is not part of the fast default suite because the
-model assets are large.
+model assets are large. The transform output is also compared pixel-for-pixel
+with the corrected reference processor contract.
+
+### Caption-Guided Evaluation Gate
+
+Caption-guided inference remains explicitly experimental until a labeled
+retrieval or clustering comparison demonstrates that it improves the target
+metric over image-only embeddings on representative data. Tensor correctness
+tests establish implementation fidelity, not modeling benefit. The CLI may
+expose the explicit mode before that evidence exists, but documentation and
+defaults must not describe it as the preferred or automatically selected mode.
 
 ## Migration Sequence
 
-1. Add quality configuration, package skeleton, and import-boundary tests.
-2. Move data, CSD model, clustering, projection, and dashboard modules without
-   changing behavior.
-3. Split the dashboard and replace old imports and entry points.
-4. Add manifests and reject legacy caches.
-5. Port the corrected SigLIP2-DINOv3 runtime with upstream regression tests.
-6. Add dataset-wide image-only and caption-guided modes.
-7. Update scripts, configuration, README, ignored artifacts, and naming.
-8. Remove compatibility modules only after all internal imports and tests use
-   the new package.
-9. Reformat, lint, run the full fast suite, then run the opt-in real-model smoke
+1. Add characterization tests for current CLI, CSD embeddings, cache paths,
+   clustering, projection, export, and the one-command PowerShell workflow.
+2. Add quality configuration and the minimal package skeleton, then move modules
+   without changing model or cache semantics.
+3. Establish directory-versus-Lance source ownership, dependency-specific
+   digests, atomic versioned artifacts, and complete projection/export identity.
+4. Port the corrected SigLIP2-DINOv3 runtime as a recorded vendored snapshot and
+   stabilize the image-only backend with upstream regression tests.
+5. Move model-independent clustering out of Dash and split only figure creation
+   from the remaining application code.
+6. Add explicit caption-guided mode behind its backend capability and
+   experimental documentation, then run the evaluation gate separately.
+7. Update scripts, configuration, README, ignored artifacts, and naming; remove
+   old internal modules only after all imports and tests use the package.
+8. Reformat, lint, run the full fast suite, then run the opt-in real-model smoke
    test when local assets and a suitable device are available.
 
 At every migration step, tests must pass before the next responsibility moves.
@@ -403,16 +494,27 @@ step.
 - No Python file remains at the repository root.
 - `python -m csd_image2embedding --help` and `Step2_embedding.ps1` use the new
   package entry point.
+- The old option spelling remains accepted through the package entry point for
+  one migration cycle; the intentional removal of `python main.py` is documented.
 - No production DINOv3 path imports or constructs `Dinov2Model`.
 - DINOv3 raw checkpoints load strictly through the pinned official factory.
 - Preprocessing matches the corrected square-resize contract.
-- Image-only is used for absent or partial caption coverage; caption-guided mode
-  is used only for complete coverage or an explicit valid request.
+- CSD accepts only image-only mode. SigLIP2-DINOv3 defaults to image-only even
+  when sidecars exist. Caption-guided mode requires an explicit request and
+  complete valid coverage.
 - One embedding artifact contains exactly one backend, model fingerprint, and
   text mode.
-- Legacy or incompatible embeddings and projections cannot be silently reused.
+- Image-only artifact identity excludes caption changes; caption-guided identity
+  includes them.
+- Directory input changes invalidate generated snapshots, while explicit Lance
+  inputs are treated as their own source of truth.
+- Legacy artifacts remain untouched and the default command creates a new
+  versioned artifact without requiring `--rebuild`.
+- Projection and export identities cover all result-affecting parameters,
+  seeds, versions, and schema numbers.
+- The copied SigLIP2-DINOv3 runtime has a committed, hash-verifiable upstream
+  snapshot record.
 - Clustering and projection tests run without importing Dash.
 - Ruff formatting and checks pass.
 - The complete fast test suite passes; any unavailable large-model smoke test is
   reported explicitly rather than claimed as run.
-
