@@ -18,7 +18,8 @@ from csd_image2embedding.models.siglip_dinov3.backend import (
 class FakeTokenizer:
     def __call__(self, captions, **kwargs):
         assert kwargs == {
-            "padding": True,
+            "max_length": 64,
+            "padding": "max_length",
             "truncation": True,
             "return_tensors": "pt",
         }
@@ -118,6 +119,26 @@ def test_caption_guided_backend_tokenizes_generic_caption_as_content():
     np.testing.assert_allclose(np.linalg.norm(output.content_embeddings, axis=1), [1.0])
 
 
+def test_caption_guided_synthesizes_a_missing_siglip_attention_mask():
+    backend = _fake_backend(mode="caption-guided")
+    backend.model.siglip.tokenizer = lambda captions, **kwargs: {
+        "input_ids": torch.ones((len(captions), 4), dtype=torch.int64)
+    }
+    observed = {}
+
+    def encode_text(input_ids, attention_mask):
+        observed["mask"] = attention_mask.detach().cpu()
+        return torch.tensor([1.0, 0.0], device=input_ids.device).repeat(
+            len(input_ids), 1
+        )
+
+    backend.model.encode_text = encode_text
+
+    backend.encode([_fake_image()], ["a plain caption"])
+
+    assert torch.equal(observed["mask"], torch.ones((1, 4), dtype=torch.int64))
+
+
 @pytest.mark.parametrize(
     ("backend", "mode", "accepted"),
     [
@@ -166,6 +187,7 @@ checkpoint_path: "./checkpoints/checkpoint_best.safetensors"
 
     config = load_siglip_dino_config(config_path)
 
+    assert config.text_max_length == 64
     assert config.dino_model_id == str((model_root / "dinov3.pth").resolve())
     assert config.siglip_model_id == str((model_root / "siglip2").resolve())
     assert (

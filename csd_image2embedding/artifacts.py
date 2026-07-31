@@ -112,6 +112,7 @@ class ArtifactStore:
             / identity.backend
             / identity.mode
             / identity.model_digest
+            / identity.preprocessing_digest
         )
 
     @contextmanager

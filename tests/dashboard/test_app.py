@@ -1,8 +1,11 @@
+from pathlib import Path
+
 from dash import dcc, html
 
 from csd_image2embedding.dashboard.app import (
     build_default_view_specs,
     build_multi_view_layout,
+    build_view_output_dir,
     create_dashboard_app,
 )
 
@@ -62,6 +65,18 @@ def test_default_views_include_each_clusterer_for_style_and_content():
         "hdbscan",
         "finch",
     ]
+
+
+def test_export_path_is_namespaced_by_complete_run_identity():
+    config = {
+        "title": "[CSD] FINCH_style",
+        "clusterer": "finch",
+    }
+    digest = "a" * 64
+
+    path = build_view_output_dir(Path("output"), config, 2, digest)
+
+    assert path == Path("output") / "[CSD] FINCH_style_p2" / "runs" / digest
 
 
 def test_dashboard_app_reads_configuration_from_view_service():

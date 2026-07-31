@@ -14,6 +14,7 @@ model:
 preprocessing:
   dino_image_size: 224
   siglip_image_size: 256
+  text_max_length: 64
   dino_mean: [0.485, 0.456, 0.406]
   dino_std: [0.229, 0.224, 0.225]
   siglip_mean: [0.5, 0.5, 0.5]

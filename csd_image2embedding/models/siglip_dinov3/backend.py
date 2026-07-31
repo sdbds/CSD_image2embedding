@@ -16,7 +16,12 @@ from PIL import Image
 from safetensors import safe_open
 from safetensors.torch import load_file as load_safetensors
 
-from ..base import EmbeddingBatch, TextMode, validate_backend_mode
+from ..base import (
+    EmbeddingBatch,
+    TextMode,
+    precision_identity,
+    validate_backend_mode,
+)
 from .feature_extractors import (
     DEFAULT_DINOV3_HUB_REPO,
     FrozenDINOv3,
@@ -93,6 +98,7 @@ class SiglipDinoConfig:
     projector_dropout: float
     dino_image_size: int
     siglip_image_size: int
+    text_max_length: int
     dino_mean: tuple[float, float, float]
     dino_std: tuple[float, float, float]
     siglip_mean: tuple[float, float, float]
@@ -152,6 +158,7 @@ def load_siglip_dino_config(
         projector_dropout=float(model.get("projector_dropout", 0.0)),
         dino_image_size=int(preprocessing.get("dino_image_size", 224)),
         siglip_image_size=int(preprocessing.get("siglip_image_size", 256)),
+        text_max_length=int(preprocessing.get("text_max_length", 64)),
         dino_mean=_three_floats(
             preprocessing.get("dino_mean", IMAGENET_MEAN), "dino_mean"
         ),
@@ -313,6 +320,7 @@ class SiglipDinoBackend:
         precision: str = "auto",
         fingerprint: str,
         preprocessing_fingerprint: str = "unknown",
+        text_max_length: int = 64,
     ):
         self.mode = validate_backend_mode(self.name, self.supported_text_modes, mode)
         self.model = model
@@ -322,6 +330,7 @@ class SiglipDinoBackend:
         self.amp_dtype = _resolve_amp_dtype(device, precision)
         self.fingerprint = fingerprint
         self.preprocessing_fingerprint = preprocessing_fingerprint
+        self.text_max_length = text_max_length
 
     @classmethod
     def from_config(
@@ -376,6 +385,7 @@ class SiglipDinoBackend:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         model.to(device).eval()
+        amp_dtype = _resolve_amp_dtype(device, precision)
 
         preprocessing = config.preprocessing_payload()
         preprocessing_fingerprint = hashlib.sha256(
@@ -395,7 +405,7 @@ class SiglipDinoBackend:
                 "dropout": config.projector_dropout,
             },
             "preprocessing": preprocessing,
-            "precision": precision,
+            "precision": precision_identity(precision, amp_dtype),
         }
         fingerprint = hashlib.sha256(
             _canonical_json_bytes(fingerprint_payload)
@@ -417,6 +427,7 @@ class SiglipDinoBackend:
             precision=precision,
             fingerprint=fingerprint,
             preprocessing_fingerprint=preprocessing_fingerprint,
+            text_max_length=config.text_max_length,
         )
 
     def _stack_images(self, images, transform) -> torch.Tensor:
@@ -482,12 +493,16 @@ class SiglipDinoBackend:
             if self.mode == "caption-guided":
                 tokens = self.model.siglip.tokenizer(
                     valid_captions,
-                    padding=True,
+                    max_length=self.text_max_length,
+                    padding="max_length",
                     truncation=True,
                     return_tensors="pt",
                 )
                 input_ids = tokens["input_ids"].to(self.device)
-                attention_mask = tokens["attention_mask"].to(self.device)
+                attention_mask = tokens.get("attention_mask")
+                if attention_mask is None:
+                    attention_mask = torch.ones_like(tokens["input_ids"])
+                attention_mask = attention_mask.to(self.device)
                 d_bar = functional.normalize(
                     self.model.encode_text(input_ids, attention_mask), dim=-1
                 )

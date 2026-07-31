@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import lance
@@ -73,6 +74,30 @@ def test_external_lance_fingerprint_uses_stored_rows_not_source_files(tmp_path):
     second = fingerprint_external_lance(dataset)
 
     assert first == second
+
+
+def test_external_lance_reader_accepts_a_path_without_embedded_bytes(tmp_path):
+    image_path = tmp_path / "external.png"
+    _write_png(image_path, "purple")
+    image_hash = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    input_path = tmp_path / "external.lance"
+    lance.write_dataset(
+        pa.table(
+            {
+                "path": [str(image_path)],
+                "image_sha256": [image_hash],
+                "captions": [None],
+            }
+        ),
+        input_path,
+    )
+
+    dataset = LanceImageDataset(input_path)
+    path, image, caption = dataset[0]
+
+    assert path == str(image_path)
+    assert image.size == (2, 1)
+    assert caption is None
 
 
 def test_external_lance_fingerprint_changes_with_stored_path_or_hash(tmp_path):

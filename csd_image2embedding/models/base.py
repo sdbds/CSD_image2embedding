@@ -8,6 +8,13 @@ import numpy as np
 TextMode = Literal["image-only", "caption-guided"]
 
 
+def precision_identity(requested: str, amp_dtype) -> dict[str, str]:
+    """Describe the effective arithmetic precision used for cache identity."""
+
+    resolved = "fp32" if amp_dtype is None else str(amp_dtype).removeprefix("torch.")
+    return {"requested": requested, "resolved": resolved}
+
+
 @dataclass(frozen=True)
 class EmbeddingBatch:
     """Validated style and content embeddings produced by one backend call."""

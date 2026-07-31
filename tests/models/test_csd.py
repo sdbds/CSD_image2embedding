@@ -56,6 +56,23 @@ def test_csd_backend_returns_normalized_embedding_batch():
     result.validate(expected_rows=1)
 
 
+def test_csd_backend_accepts_a_single_image_path(tmp_path):
+    image_path = tmp_path / "input.png"
+    Image.new("RGB", (4, 2), "red").save(image_path)
+    backend = CSDClipBackend(
+        model=FakeCSDModel(),
+        processor=FakeProcessor(),
+        model_name="fake-csd",
+        processor_name="fake-processor",
+        device="cpu",
+        precision="fp32",
+    )
+
+    result = backend.encode(image_path)
+
+    assert result.style_embeddings.shape == (1, 2)
+
+
 def test_csd_fingerprint_changes_with_processor_identity():
     common = {
         "model": FakeCSDModel(),
@@ -71,6 +88,21 @@ def test_csd_fingerprint_changes_with_processor_identity():
     assert first.fingerprint != second.fingerprint
     assert len(first.preprocessing_fingerprint) == 64
     assert first.preprocessing_fingerprint != second.preprocessing_fingerprint
+
+
+def test_csd_auto_precision_fingerprint_uses_the_resolved_device_precision():
+    common = {
+        "model": FakeCSDModel(),
+        "processor": FakeProcessor(),
+        "model_name": "fake-csd",
+        "processor_name": "fake-processor",
+        "precision": "auto",
+    }
+
+    cpu = CSDClipBackend(device="cpu", **common)
+    cuda = CSDClipBackend(device="cuda", **common)
+
+    assert cpu.fingerprint != cuda.fingerprint
 
 
 def test_csd_preprocessing_pads_non_square_images_to_model_size():

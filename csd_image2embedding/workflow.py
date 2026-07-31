@@ -481,6 +481,7 @@ class WorkflowViewService:
                     self.settings.output_dir,
                     view_config,
                     finch_partition_index,
+                    identity.digest(),
                 ),
                 identity,
                 self.settings.symlink,
@@ -559,7 +560,6 @@ def execute_workflow(
     projection_spec = projection_manager.build_spec(
         reducer_name, random_state=settings.random_state
     )
-    projection_manager.get_projected_dataframe(projection_spec)
     projection_identity = projection_spec.digest(embedding_manifest_digest)
     export_identity = ExportIdentity(
         embedding_manifest_digest,

@@ -6,7 +6,7 @@ from PIL import Image
 
 
 @pytest.mark.model_smoke
-def test_local_siglip_dinov3_image_only_smoke(request):
+def test_local_siglip_dinov3_modes_smoke(request):
     if not request.config.getoption("--run-model-smoke"):
         pytest.skip("pass --run-model-smoke to load local model assets")
 
@@ -36,3 +36,19 @@ def test_local_siglip_dinov3_image_only_smoke(request):
     assert np.isfinite(first.content_embeddings).all()
     np.testing.assert_allclose(first.style_embeddings, second.style_embeddings)
     np.testing.assert_allclose(first.content_embeddings, second.content_embeddings)
+
+    guided_backend = SiglipDinoBackend(
+        backend.model,
+        backend.dino_transform,
+        backend.siglip_transform,
+        mode="caption-guided",
+        device=backend.device,
+        precision="fp32",
+        fingerprint=backend.fingerprint,
+        preprocessing_fingerprint=backend.preprocessing_fingerprint,
+    )
+    guided = guided_backend.encode([image], ["a plain blue geometric image"])
+    assert guided.style_embeddings.shape == (1, 1024)
+    assert guided.content_embeddings.shape == (1, 1024)
+    assert np.isfinite(guided.style_embeddings).all()
+    assert np.isfinite(guided.content_embeddings).all()

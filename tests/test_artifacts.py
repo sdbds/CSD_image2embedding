@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -72,6 +73,18 @@ def test_legacy_embedding_path_is_not_removed_or_reused(tmp_path):
 
     assert store.resolve(fake_identity()) is None
     assert legacy.exists()
+
+
+def test_preprocessing_identities_have_independent_current_pointers(tmp_path):
+    store = ArtifactStore(tmp_path)
+    first_identity = fake_identity()
+    second_identity = replace(first_identity, preprocessing_digest="prep-b")
+    with store.stage(first_identity) as staged:
+        (staged / "data.lance").mkdir()
+        first = store.publish(first_identity, staged, {"data_digest": "first"})
+
+    assert store.resolve(first_identity) == first
+    assert store.resolve(second_identity) is None
 
 
 def test_manifest_validation_reports_only_differing_identity_keys():

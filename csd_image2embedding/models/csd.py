@@ -15,7 +15,7 @@ from huggingface_hub import PyTorchModelHubMixin
 from PIL import Image
 from transformers import PretrainedConfig
 
-from .base import EmbeddingBatch
+from .base import EmbeddingBatch, precision_identity
 
 CSD_IMAGE_SIZE = 336
 CSD_BACKEND_SCHEMA_VERSION = 1
@@ -147,10 +147,15 @@ def stack_transformed_images(images, transform, device):
     return torch.stack(transformed, dim=0).to(device)
 
 
-def preprocess_csd_image(image: Image.Image) -> Image.Image:
+def preprocess_csd_image(image: Image.Image | str | Path) -> Image.Image:
     """Apply the square white padding used by the original CSD workflow."""
 
-    image_array = np.asarray(image.convert("RGB"))
+    if isinstance(image, Image.Image):
+        prepared = image.convert("RGB")
+    else:
+        with Image.open(image) as source:
+            prepared = source.convert("RGB")
+    image_array = np.asarray(prepared)
     size = max(image_array.shape[:2])
     pad_x = size - image_array.shape[1]
     pad_y = size - image_array.shape[0]
@@ -245,11 +250,12 @@ class CSDClipBackend:
         self.processor = processor
         self.device = device
         self.precision = precision
+        amp_dtype = resolve_amp_dtype(device, precision)
         self.pipeline = CSDClipPipeline(
             model=model,
             processor=processor,
             device=device,
-            amp_dtype=resolve_amp_dtype(device, precision),
+            amp_dtype=amp_dtype,
         )
         preprocessing_payload = {
             "schema_version": 1,
@@ -272,7 +278,7 @@ class CSDClipBackend:
             "embedding_dim": getattr(model, "embedding_dim", None),
             "content_dim": getattr(model, "content_dim", None),
             "style_dim": getattr(model, "style_dim", None),
-            "precision": precision,
+            "precision": precision_identity(precision, amp_dtype),
         }
         encoded = json.dumps(
             fingerprint_payload, sort_keys=True, separators=(",", ":")
@@ -308,6 +314,8 @@ class CSDClipBackend:
     def encode(self, images, captions=None) -> EmbeddingBatch:
         del captions
         image_batch, _ = normalize_image_batch(images)
+        if not image_batch:
+            raise ValueError("Cannot encode an empty image batch")
         prepared = [preprocess_csd_image(image) for image in image_batch]
         outputs = self.pipeline(prepared)
         result = EmbeddingBatch(

@@ -84,7 +84,9 @@ Embedding builds are immutable and published through an atomic `current.json`
 pointer. Input bytes, backend, mode, model, preprocessing, schema, projection,
 and clustering parameters participate in the relevant identities. Existing
 legacy `datasets.lance`, `embeddings_*.lance`, and output directories are never
-silently reused or deleted. Use `--rebuild` to publish a fresh compatible build.
+silently reused or deleted. Cluster exports are separated under
+`output/<view>/runs/<identity>/`. Use `--rebuild` to publish a fresh compatible
+build.
 
 `python main.py` was intentionally removed. Use
 `python -m csd_image2embedding`; the hidden legacy model option remains only for

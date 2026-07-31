@@ -1,7 +1,22 @@
 import numpy as np
 import pytest
 
-from csd_image2embedding.models.base import EmbeddingBatch, validate_backend_mode
+from csd_image2embedding.models.base import (
+    EmbeddingBatch,
+    precision_identity,
+    validate_backend_mode,
+)
+
+
+def test_precision_identity_resolves_auto_instead_of_hashing_ambiguous_label():
+    assert precision_identity("auto", None) == {
+        "requested": "auto",
+        "resolved": "fp32",
+    }
+    assert precision_identity("auto", "torch.float16") == {
+        "requested": "auto",
+        "resolved": "float16",
+    }
 
 
 def test_validate_backend_mode_rejects_caption_mode_for_csd():

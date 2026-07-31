@@ -218,14 +218,17 @@ def resolve_active_finch_partition(view_config, finch_partition_index):
 
 
 def build_view_output_dir(
-    output_dir: Path, view_config, finch_partition_index: int
+    output_dir: Path,
+    view_config,
+    finch_partition_index: int,
+    run_identity_digest: str,
 ) -> Path:
     suffix = (
         f"{view_config['title']}_p{finch_partition_index}"
         if view_config["clusterer"] == "finch"
         else view_config["title"]
     )
-    return Path(output_dir) / suffix
+    return Path(output_dir) / suffix / "runs" / run_identity_digest
 
 
 def find_free_port() -> int:

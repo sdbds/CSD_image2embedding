@@ -9,6 +9,7 @@ from csd_image2embedding.artifacts import ArtifactStore
 from csd_image2embedding.data.discovery import discover_directory
 from csd_image2embedding.data.lance import write_source_snapshot
 from csd_image2embedding.models.base import EmbeddingBatch
+from csd_image2embedding.projection.manager import ProjectionManager
 from csd_image2embedding.workflow import WorkflowSettings, execute_workflow
 
 
@@ -175,3 +176,20 @@ def test_workflow_propagates_identities_through_projection_and_export(tmp_path):
     )
     assert result.export_identity.embedding_digest == result.embedding_manifest_digest
     assert result.export_identity.projection_digest == result.projection_identity
+
+
+def test_workflow_defers_projection_failures_to_the_requested_view(
+    tmp_path, monkeypatch
+):
+    source = _source_fixture(tmp_path)
+    monkeypatch.setattr(
+        ProjectionManager,
+        "get_projected_dataframe",
+        lambda *args, **kwargs: pytest.fail(
+            "projection ran before a view requested it"
+        ),
+    )
+
+    result = _run_fixture(source, "image-only", tmp_path / ".artifacts")
+
+    assert result.view_service.default_reducer == "legacy"

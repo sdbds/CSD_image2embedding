@@ -275,20 +275,35 @@ class LanceImageDataset:
         )
         self.transform = transform
         self._schema_names = set(self.dataset.schema.names)
+        self._path_column = next(
+            (
+                name
+                for name in ("filename", "path", "relative_path")
+                if name in self._schema_names
+            ),
+            None,
+        )
+        if self._path_column is None:
+            raise ValueError("Lance image input has no supported path column")
+        self._image_column = "image" if "image" in self._schema_names else None
 
     def __len__(self) -> int:
         return self.dataset.count_rows()
 
     def _row(self, index: int) -> dict[str, list[object]]:
-        columns = ["filename", "image"]
+        columns = [self._path_column]
+        if self._image_column is not None:
+            columns.append(self._image_column)
         if "captions" in self._schema_names:
             columns.append("captions")
         return self.dataset.take([index], columns=columns).to_pydict()
 
     def __getitem__(self, index: int):
         row = self._row(index)
-        path = str(row["filename"][0])
-        image_bytes = row["image"][0]
+        path = str(row[self._path_column][0])
+        image_bytes = (
+            row[self._image_column][0] if self._image_column is not None else None
+        )
         if image_bytes:
             with Image.open(io.BytesIO(image_bytes)) as source:
                 image = source.convert("RGB")
@@ -297,7 +312,12 @@ class LanceImageDataset:
                 image = source.convert("RGB")
         if self.transform is not None:
             image = self.transform(image)
-        caption = str(row.get("captions", [""])[0]).strip() or None
+        caption_value = row.get("captions", [None])[0]
+        caption = (
+            caption_value.strip()
+            if isinstance(caption_value, str) and caption_value.strip()
+            else None
+        )
         return path, image, caption
 
 
