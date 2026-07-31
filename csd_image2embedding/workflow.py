@@ -43,28 +43,20 @@ def run(args) -> int:
         build_embedding_table,
         write_source_snapshot,
     )
+    from .models import create_backend, get_supported_text_modes
     from .models.base import validate_backend_mode
-    from .models.csd import CSDClipBackend
 
-    supported_modes = {
-        "csd": frozenset({"image-only"}),
-        "siglip-dinov3": frozenset({"image-only", "caption-guided"}),
-    }
-    validate_backend_mode(args.backend, supported_modes[args.backend], args.text_mode)
-    if args.backend != "csd":
-        raise RuntimeError(
-            "The corrected SigLIP2-DINOv3 backend is not available in this build yet"
-        )
+    validate_backend_mode(
+        args.backend,
+        get_supported_text_modes(args.backend),
+        args.text_mode,
+    )
 
     if not args.dataset_path.exists():
         snapshot = discover_directory(args.train_data_dir)
         write_source_snapshot(snapshot, args.dataset_path)
 
-    backend = CSDClipBackend.from_pretrained(
-        args.model_name,
-        args.processor_name,
-        precision=args.precision,
-    )
+    backend = create_backend(args.backend, args)
     source_dataset = LanceImageDataset(args.dataset_path)
     embeddings_path = args.embeddings_path or Path(f"embeddings_{args.backend}.lance")
 
@@ -95,7 +87,11 @@ def run(args) -> int:
                 continue
             batch_paths, images, captions = zip(*batch, strict=True)
             try:
-                encoded = backend.encode(images, captions)
+                encoded = backend.encode(
+                    images,
+                    captions if args.text_mode == "caption-guided" else None,
+                )
+                encoded.validate(expected_rows=len(images))
             except Exception as error:
                 first = batch_index * args.batch_size
                 last = first + len(batch) - 1

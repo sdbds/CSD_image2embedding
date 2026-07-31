@@ -23,7 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--text-mode",
         choices=("image-only", "caption-guided"),
         default="image-only",
-        help="Caption semantics are used only when explicitly selected",
+        help=(
+            "Embedding semantics; caption-guided is experimental and treats every "
+            "sidecar caption as content guidance"
+        ),
     )
     parser.add_argument(
         "--style-model-config",
