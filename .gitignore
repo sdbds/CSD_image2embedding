@@ -167,4 +167,5 @@ huggingface/
 *.lance*
 *.lance*/
 output/
+.artifacts/
 .projection_cache/

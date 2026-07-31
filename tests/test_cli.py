@@ -24,6 +24,26 @@ def test_conflicting_new_and_legacy_backend_options_are_rejected():
         parse_args(["--backend", "csd", "--model_type", "sd"])
 
 
+def test_removed_raw_embedding_path_fails_with_a_migration_hint(capsys):
+    with pytest.raises(SystemExit):
+        parse_args(["--embeddings-path", "old.lance"])
+
+    assert "--artifact-root" in capsys.readouterr().err
+
+
+def test_removed_worker_pool_fails_instead_of_being_silently_ignored(capsys):
+    with pytest.raises(SystemExit):
+        parse_args(["--num-workers", "2"])
+
+    assert "deterministic Lance reader" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("option", ["--batch-size=0", "--k-clusters=-1"])
+def test_positive_numeric_options_are_validated(option):
+    with pytest.raises(SystemExit):
+        parse_args([option])
+
+
 def test_module_help_does_not_import_dash_or_models():
     result = subprocess.run(
         [sys.executable, "-m", "csd_image2embedding", "--help"],

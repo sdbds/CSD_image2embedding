@@ -31,7 +31,6 @@ class WorkflowSettings:
     backend: str = "csd"
     text_mode: str = "image-only"
     batch_size: int = 12
-    num_workers: int = 0
     rebuild: bool = False
     reducer: str | None = None
     random_state: int = 42
@@ -41,7 +40,6 @@ class WorkflowSettings:
     finch_partition_index: int = 1
     output_dir: Path | None = Path("output")
     symlink: bool = False
-    embeddings_path: Path | None = None
     model_name: str = "yuxi-liu-wired/CSD"
     processor_name: str = "openai/clip-vit-large-patch14"
     style_model_config: Path = Path("configs/siglip_dinov3.yaml")

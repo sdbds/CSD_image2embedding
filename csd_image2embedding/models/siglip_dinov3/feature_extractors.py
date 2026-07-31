@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import inspect
 import sys
 from pathlib import Path
 
@@ -33,16 +34,15 @@ def _resolve_meta_repo(hub_repo: str) -> Path:
             "This PyTorch version cannot cache GitHub Hub source without "
             "importing hubconf.py"
         )
-    return Path(
-        resolver(
-            hub_repo,
-            force_reload=False,
-            trust_repo=True,
-            calling_fn="load",
-            verbose=True,
-            skip_validation=False,
-        )
-    )
+    options = {
+        "force_reload": False,
+        "trust_repo": True,
+        "verbose": True,
+        "skip_validation": False,
+    }
+    if "calling_fn" in inspect.signature(resolver).parameters:
+        options["calling_fn"] = "load"
+    return Path(resolver(hub_repo, **options))
 
 
 def _load_meta_dinov3(

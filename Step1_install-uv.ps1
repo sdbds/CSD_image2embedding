@@ -1,92 +1,66 @@
+$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$Env:HF_HOME = "huggingface"
-$Env:HF_ENDPOINT = "https://hf-mirror.com"
-$Env:PIP_DISABLE_PIP_VERSION_CHECK = 1
-$Env:PIP_NO_CACHE_DIR = 1
-$Env:UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple/"
-$Env:UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cu130"
-#$Env:UV_CACHE_DIR="./.cache"
-$Env:UV_NO_CACHE=0
-$Env:UV_LINK_MODE="copy"
-$Env:FAISS_ENABLE_GPU="ON"
-$flashKMeansSpec = "git+https://github.com/svg-project/flash-kmeans.git@main"
-function InstallFail {
-    Write-Output "Install failed��"
-    Read-Host | Out-Null ;
-    Exit
+if (-not $Env:HF_HOME) {
+    $Env:HF_HOME = Join-Path $PSScriptRoot "huggingface"
 }
+if (-not $Env:HF_ENDPOINT) {
+    $Env:HF_ENDPOINT = "https://hf-mirror.com"
+}
+if (-not $Env:UV_INDEX_URL) {
+    $Env:UV_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+}
+if (-not $Env:UV_EXTRA_INDEX_URL) {
+    $Env:UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cu130"
+}
+$Env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
+$Env:UV_LINK_MODE = "copy"
 
-function Check {
-    param (
-        $ErrorInfo
-    )
-    if (!($?)) {
-        Write-Output $ErrorInfo
-        InstallFail
-    }
-}
-
-try {
-    uv --version
-    Write-Output "uv installed|UVģ���Ѱ�װ."
-}
-catch {
-    Write-Output "Installing uv|��װuvģ����..."
-    if ($Env:OS -ilike "*windows*") {
-        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-        Check "Install failed|��װuvģ��ʧ�ܡ�"
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Write-Output "Installing uv..."
+    if ($Env:OS -eq "Windows_NT") {
+        Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     }
     else {
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        Check "Install failed|��װuvģ��ʧ�ܡ�"
+        sh -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    }
+    $uvBin = Join-Path $HOME ".local/bin"
+    $Env:PATH = "$uvBin$([IO.Path]::PathSeparator)$Env:PATH"
+}
+
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    throw "uv was installed but is not available in this shell. Open a new shell and rerun this script."
+}
+
+if (-not (Test-Path ".venv")) {
+    uv venv .venv --python 3.11
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create the Python 3.11 environment."
     }
 }
 
-if ($env:OS -ilike "*windows*") {
-    if (Test-Path "./venv/Scripts/activate") {
-        Write-Output "Windows venv"
-        . ./venv/Scripts/activate
-    }
-    elseif (Test-Path "./.venv/Scripts/activate") {
-        Write-Output "Windows .venv"
-        . ./.venv/Scripts/activate
-    }else{
-        Write-Output "Create .venv"
-        uv venv -p 3.11
-        . ./.venv/Scripts/activate
-    }
-}
-elseif (Test-Path "./venv/bin/activate") {
-    Write-Output "Linux venv"
-    . ./venv/bin/Activate.ps1
-}
-elseif (Test-Path "./.venv/bin/activate") {
-    Write-Output "Linux .venv"
-    . ./.venv/bin/activate.ps1
-}
-else{
-    Write-Output "Create .venv"
-    uv venv -p 3.11
-    . ./.venv/bin/activate.ps1
+Write-Output "Installing locked runtime dependencies..."
+uv pip sync requirements-uv.txt --python .venv --index-strategy unsafe-best-match
+if ($LASTEXITCODE -ne 0) {
+    throw "Runtime dependency installation failed."
 }
 
-Write-Output "Requirements installing|��װ������������"
-
-uv pip sync ./requirements-uv.txt --index-strategy unsafe-best-match
-Check "Requirements install failed|������װʧ�ܡ�"
-
-Write-Output "Installing flash-kmeans backend|��װflash-kmeans���࣮"
-if ($env:OS -ilike "*windows*") {
-    uv pip install triton-windows
-    Check "triton-windows install failed|triton-windows��װʧ�ܡ�"
+Write-Output "Trying the optional accelerated KMeans backend..."
+if ($Env:OS -eq "Windows_NT") {
+    uv pip install triton-windows --python .venv
 }
 else {
-    uv pip install triton
-    Check "triton install failed|triton��װʧ�ܡ�"
+    uv pip install triton --python .venv
 }
-uv pip install --no-deps $flashKMeansSpec
-Check "flash-kmeans install failed|flash-kmeans��װʧ�ܡ�"
 
-Write-Output "Install finished"
-Read-Host | Out-Null ;
+if ($LASTEXITCODE -eq 0) {
+    uv pip install --no-deps `
+        "git+https://github.com/svg-project/flash-kmeans.git@main" `
+        --python .venv
+}
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "flash-kmeans is unavailable; scikit-learn KMeans will be used."
+}
+
+Write-Output "Installation finished."

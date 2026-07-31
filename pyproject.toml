@@ -9,6 +9,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
@@ -17,4 +18,3 @@ select = ["E", "F", "I", "B", "UP", "N"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
-

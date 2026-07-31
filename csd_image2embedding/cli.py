@@ -9,6 +9,13 @@ from pathlib import Path
 BACKEND_ALIASES = {"csd": "csd", "sd": "siglip-dinov3"}
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate style/content embeddings and open the cluster dashboard"
@@ -67,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="embeddings_path",
         type=Path,
         default=None,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--artifact-root",
@@ -90,11 +98,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--processor_name",
         default="openai/clip-vit-large-patch14",
     )
-    parser.add_argument("--batch-size", "--batch_size", type=int, default=12)
-    parser.add_argument("--num-workers", "--num_workers", type=int, default=0)
-    parser.add_argument("--k-clusters", "--k_clusters", type=int, default=40)
+    parser.add_argument("--batch-size", "--batch_size", type=_positive_int, default=12)
     parser.add_argument(
-        "--min-cluster-size", "--min_cluster_size", type=int, default=10
+        "--num-workers",
+        "--num_workers",
+        type=int,
+        default=0,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--k-clusters", "--k_clusters", type=_positive_int, default=40)
+    parser.add_argument(
+        "--min-cluster-size",
+        "--min_cluster_size",
+        type=_positive_int,
+        default=10,
     )
     parser.add_argument(
         "--output-dir", "--output_dir", type=Path, default=Path("output")
@@ -137,6 +154,17 @@ def build_parser() -> argparse.ArgumentParser:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.embeddings_path is not None:
+        parser.error(
+            "--embeddings-path is no longer a mutable cache destination; "
+            "use --artifact-root for versioned artifacts"
+        )
+    if args.num_workers != 0:
+        parser.error(
+            "--num-workers is no longer used by the deterministic Lance reader; "
+            "omit this option"
+        )
 
     legacy_backend = (
         BACKEND_ALIASES[args.legacy_model_type]

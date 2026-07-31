@@ -61,6 +61,54 @@ class FakeHFModel(nn.Module):
         )
 
 
+def test_meta_repo_resolver_supports_torch_without_calling_fn(monkeypatch, tmp_path):
+    calls = []
+
+    def resolver(
+        github,
+        force_reload,
+        trust_repo,
+        verbose=True,
+        skip_validation=False,
+    ):
+        calls.append((github, force_reload, trust_repo, verbose, skip_validation))
+        return tmp_path
+
+    monkeypatch.setattr(torch.hub, "_get_cache_or_reload", resolver)
+
+    assert feature_extractors._resolve_meta_repo("owner/repo:revision") == tmp_path
+    assert calls == [("owner/repo:revision", False, True, True, False)]
+
+
+def test_meta_repo_resolver_supplies_legacy_calling_fn(monkeypatch, tmp_path):
+    calls = []
+
+    def resolver(
+        github,
+        force_reload,
+        trust_repo,
+        calling_fn,
+        verbose=True,
+        skip_validation=False,
+    ):
+        calls.append(
+            (
+                github,
+                force_reload,
+                trust_repo,
+                calling_fn,
+                verbose,
+                skip_validation,
+            )
+        )
+        return tmp_path
+
+    monkeypatch.setattr(torch.hub, "_get_cache_or_reload", resolver)
+
+    assert feature_extractors._resolve_meta_repo("owner/repo:revision") == tmp_path
+    assert calls == [("owner/repo:revision", False, True, "load", True, False)]
+
+
 def test_local_pth_dispatches_to_official_meta_loader_and_hashes_checkpoint(
     tmp_path, monkeypatch
 ):

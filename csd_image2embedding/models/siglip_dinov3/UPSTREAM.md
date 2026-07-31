@@ -7,7 +7,9 @@ destination hashes below jointly identify the reviewed snapshot.
 
 The vendored files keep the corrected model behavior. Local adaptations are
 limited to package-relative imports, an inlined SHA256 helper, formatting, and
-local naming/docstring cleanup. The upstream license is
+local naming/docstring cleanup. The resolver also adapts to both known
+`torch.hub._get_cache_or_reload` signatures without executing `hubconf.py`.
+The upstream license is
 `D:\styledecouple_dinov3\LICENSE` (SHA256
 `6f1e622c82a380075843bb084a7ec3b1f1d12a4a02526d75e78b0924a860aa75`).
 
@@ -24,7 +26,7 @@ local naming/docstring cleanup. The upstream license is
     "src/models/style_decoupler.py": "785623ff601964298fb040e02b9a0a26482f8720f05ccc6e055b73d3efe130bd"
   },
   "vendored_sha256": {
-    "feature_extractors.py": "a6d19b0b4aed671139355fe4bee1671af66ba7fbe5605292ddae6bd29c2eb0d5",
+    "feature_extractors.py": "661cc4d66dce00822ac8df299b4dd1e91de81e1e985b1dba1cb0efe534ae4a4b",
     "projector.py": "f923c22df45fd780f63b406055d68d9b9cf9ea65c3a91c1861297b0665d1282c",
     "style_decoupler.py": "9e882ff6bf8b5fe345673669caf153250b88300e922c28887b8b3d9dd4634a05",
     "transforms.py": "b19bb3bc3b07c9d111e4e08947c2485b48308986d7ec80ca7f619a26f5155eae"
