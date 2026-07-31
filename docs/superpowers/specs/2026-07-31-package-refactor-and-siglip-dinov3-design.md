@@ -323,14 +323,20 @@ manifest owned together:
 
 ```text
 .artifacts/embeddings/v2/<input-digest>/<backend>/<mode>/<model-digest>/
-|-- data.lance/
-`-- manifest.json
+|-- current.json
+`-- builds/
+    `-- <build-digest>/
+        |-- data.lance/
+        `-- manifest.json
 ```
 
-The application builds a sibling temporary container, closes and validates the
-Lance dataset, writes the manifest, and only then renames the complete container
-into place. A process interruption therefore cannot leave a valid-looking
-dataset paired with a stale or missing manifest.
+The application builds a temporary directory under `builds/`, closes and
+validates the Lance dataset, writes the manifest, and only then renames it to its
+content digest. It finally replaces the small `current.json` pointer with
+`os.replace`. Rebuilds never replace a nonempty directory in place, which keeps
+the publish operation reliable on Windows. A process interruption can leave an
+unreferenced build for later cleanup, but cannot make readers observe a
+valid-looking dataset paired with a stale or missing manifest.
 
 The embedding manifest contains:
 
@@ -346,9 +352,8 @@ An old artifact without a manifest is incompatible but remains untouched. The
 new default path is derived from schema version and identity, so the first new
 run automatically creates a separate artifact and preserves legacy
 `embeddings_*.lance` data. An explicitly named path with incompatible contents
-fails with an actionable error. `--rebuild` rebuilds the same logical identity
-through a temporary container and atomic replacement; it never mutates a live
-artifact in place.
+fails with an actionable error. `--rebuild` publishes a new immutable build and
+atomically changes `current.json`; it never mutates a live build in place.
 
 Projection cache identity hashes all inputs that can change its result:
 
