@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from precision_utils import resolve_amp_dtype
+from csd_image2embedding.models.csd import resolve_amp_dtype
 
 
 class ResolveAmpDtypeTests(unittest.TestCase):

@@ -72,7 +72,7 @@ if ($sd_checkpoint) {
 }
 
 # run train
-python main.py $ext_args
+python -m csd_image2embedding $ext_args
 
 Write-Output "Train finished"
 Read-Host | Out-Null ;

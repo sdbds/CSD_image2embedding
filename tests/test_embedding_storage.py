@@ -2,14 +2,14 @@ import unittest
 
 import numpy as np
 
-from embedding_storage import build_embedding_table
+from csd_image2embedding.data.lance import build_embedding_table
 
 
 class BuildEmbeddingTableTests(unittest.TestCase):
     def test_stores_raw_embeddings_alongside_2d_projection_columns(self):
         table = build_embedding_table(
-            pathlist=["a.jpg", "b.jpg"],
-            imagelist=["img-a", "img-b"],
+            paths=["a.jpg", "b.jpg"],
+            previews=["img-a", "img-b"],
             style_embeddings=np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
             content_embeddings=np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np.float32),
             style_projection=np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32),

@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from runtime_env import configure_runtime_env
+from csd_image2embedding.workflow import configure_runtime_env
 
 
 class RuntimeEnvTests(unittest.TestCase):

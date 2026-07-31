@@ -4,8 +4,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from inference_utils import stack_transformed_images
-from pipeline import CSDCLIPPipeline
+from csd_image2embedding.models.csd import CSDClipPipeline, stack_transformed_images
 
 
 class DummyCSDModel(torch.nn.Module):
@@ -20,7 +19,9 @@ class DummyCSDModel(torch.nn.Module):
 
     def forward(self, pixel_values):
         batch = pixel_values.shape[0]
-        features = torch.arange(batch * 4, dtype=pixel_values.dtype, device=pixel_values.device).reshape(batch, 4)
+        features = torch.arange(
+            batch * 4, dtype=pixel_values.dtype, device=pixel_values.device
+        ).reshape(batch, 4)
         return features, features + 100, features + 200
 
 
@@ -33,7 +34,7 @@ class DummyProcessor:
 
 class CSDPipelineBatchingTests(unittest.TestCase):
     def test_returns_batched_numpy_outputs_for_multiple_images(self):
-        pipeline = CSDCLIPPipeline(
+        pipeline = CSDClipPipeline(
             model=DummyCSDModel(),
             processor=DummyProcessor(),
             device="cpu",
@@ -45,7 +46,9 @@ class CSDPipelineBatchingTests(unittest.TestCase):
         self.assertEqual(outputs["style_output"].shape, (2, 4))
         self.assertEqual(outputs["content_output"].shape, (2, 4))
         self.assertEqual(outputs["features"].shape, (2, 4))
-        np.testing.assert_allclose(outputs["style_output"][0], np.array([200, 201, 202, 203], dtype=np.float32))
+        np.testing.assert_allclose(
+            outputs["style_output"][0], np.array([200, 201, 202, 203], dtype=np.float32)
+        )
 
 
 class StackTransformedImagesTests(unittest.TestCase):
@@ -60,8 +63,12 @@ class StackTransformedImagesTests(unittest.TestCase):
         )
 
         self.assertEqual(tuple(batch.shape), (2, 3, 2, 2))
-        np.testing.assert_allclose(batch[0].cpu().numpy(), np.full((3, 2, 2), 8.0, dtype=np.float32))
-        np.testing.assert_allclose(batch[1].cpu().numpy(), np.full((3, 2, 2), 16.0, dtype=np.float32))
+        np.testing.assert_allclose(
+            batch[0].cpu().numpy(), np.full((3, 2, 2), 8.0, dtype=np.float32)
+        )
+        np.testing.assert_allclose(
+            batch[1].cpu().numpy(), np.full((3, 2, 2), 16.0, dtype=np.float32)
+        )
 
 
 if __name__ == "__main__":

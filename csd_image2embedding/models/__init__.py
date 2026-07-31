@@ -8,4 +8,3 @@ __all__ = [
     "TextMode",
     "validate_backend_mode",
 ]
-
