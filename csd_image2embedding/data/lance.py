@@ -8,6 +8,7 @@ import io
 import json
 import os
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import lance
@@ -34,6 +35,13 @@ except ImportError:
 
 SOURCE_MANIFEST_NAME = "_source_manifest.json"
 SOURCE_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class LanceInputIdentity:
+    image_digest: str
+    caption_digest: str
+    caption_counts: dict[str, int]
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -70,6 +78,9 @@ def write_source_snapshot(
     rows: list[dict[str, object]] = []
     for record in snapshot.records:
         binary_image = record.image_path.read_bytes()
+        actual_hash = hashlib.sha256(binary_image).hexdigest()
+        if actual_hash != record.image_sha256:
+            raise ValueError(f"Image changed during snapshot: {record.image_path}")
         try:
             with Image.open(io.BytesIO(binary_image)) as image:
                 image.load()
@@ -149,8 +160,10 @@ def _canonical_schema(schema: pa.Schema) -> dict[str, object]:
     }
 
 
-def fingerprint_external_lance(dataset: lance.LanceDataset) -> str:
-    """Fingerprint authoritative Lance rows without consulting source files."""
+def fingerprint_external_lance_inputs(
+    dataset: lance.LanceDataset,
+) -> LanceInputIdentity:
+    """Fingerprint independent image and caption dependencies in Lance rows."""
 
     schema_names = set(dataset.schema.names)
     path_column = next(
@@ -170,23 +183,85 @@ def fingerprint_external_lance(dataset: lance.LanceDataset) -> str:
             "External Lance input must contain a path column and a stored image hash"
         )
 
-    table = dataset.to_table(columns=[path_column, hash_column])
-    rows = [
+    image_table = dataset.to_table(columns=[path_column, hash_column])
+    image_rows = [
         [path, image_hash]
         for path, image_hash in zip(
-            table[path_column].to_pylist(),
-            table[hash_column].to_pylist(),
+            image_table[path_column].to_pylist(),
+            image_table[hash_column].to_pylist(),
             strict=True,
         )
     ]
-    payload = {
+    image_payload = {
         "schema": _canonical_schema(dataset.schema),
         "row_count": dataset.count_rows(),
         "path_column": path_column,
         "hash_column": hash_column,
-        "rows": rows,
+        "rows": image_rows,
     }
-    return hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
+    image_digest = hashlib.sha256(_canonical_json_bytes(image_payload)).hexdigest()
+
+    caption_column = "captions" if "captions" in schema_names else None
+    status_column = "caption_status" if "caption_status" in schema_names else None
+    caption_columns = [path_column]
+    if caption_column is not None:
+        caption_columns.append(caption_column)
+    if status_column is not None:
+        caption_columns.append(status_column)
+    caption_table = dataset.to_table(columns=caption_columns)
+    paths = caption_table[path_column].to_pylist()
+    captions = (
+        caption_table[caption_column].to_pylist()
+        if caption_column is not None
+        else [None] * len(paths)
+    )
+    recorded_statuses = (
+        caption_table[status_column].to_pylist()
+        if status_column is not None
+        else [None] * len(paths)
+    )
+    counts = {"valid": 0, "missing": 0, "empty": 0, "unreadable": 0}
+    caption_rows = []
+    for path, caption, recorded_status in zip(
+        paths, captions, recorded_statuses, strict=True
+    ):
+        if recorded_status == "unreadable":
+            status = "unreadable"
+            normalized = None
+        elif caption is None:
+            status = "empty" if recorded_status == "empty" else "missing"
+            normalized = None
+        elif not isinstance(caption, str):
+            status = "unreadable"
+            normalized = None
+        elif caption.strip():
+            status = "valid"
+            normalized = caption.strip()
+        else:
+            status = "empty"
+            normalized = None
+        counts[status] += 1
+        caption_hash = (
+            hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            if normalized is not None
+            else None
+        )
+        caption_rows.append([path, status, caption_hash])
+    caption_payload = {
+        "row_count": dataset.count_rows(),
+        "path_column": path_column,
+        "caption_column": caption_column,
+        "status_column": status_column,
+        "rows": caption_rows,
+    }
+    caption_digest = hashlib.sha256(_canonical_json_bytes(caption_payload)).hexdigest()
+    return LanceInputIdentity(image_digest, caption_digest, counts)
+
+
+def fingerprint_external_lance(dataset: lance.LanceDataset) -> str:
+    """Return the image-only identity of an authoritative Lance input."""
+
+    return fingerprint_external_lance_inputs(dataset).image_digest
 
 
 class LanceImageDataset:

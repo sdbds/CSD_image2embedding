@@ -58,7 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset_path",
         dest="dataset_path",
         type=Path,
-        default=Path("datasets.lance"),
+        default=None,
+        help="Use an existing authoritative Lance dataset instead of a directory",
     )
     parser.add_argument(
         "--embeddings-path",
@@ -66,6 +67,18 @@ def build_parser() -> argparse.ArgumentParser:
         dest="embeddings_path",
         type=Path,
         default=None,
+    )
+    parser.add_argument(
+        "--artifact-root",
+        type=Path,
+        default=Path(".artifacts"),
+        help="Root for versioned generated artifacts",
+    )
+    parser.add_argument(
+        "--reducer",
+        choices=("pacmap", "umap", "tsne", "ivis", "legacy"),
+        default=None,
+        help="Initial projection reducer (default: first available reducer)",
     )
     parser.add_argument(
         "--model-name",

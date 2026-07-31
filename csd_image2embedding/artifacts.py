@@ -80,6 +80,23 @@ def validate_manifest(
         )
 
 
+def read_artifact_manifest(build_path: Path) -> dict[str, object]:
+    manifest_path = Path(build_path) / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError(f"Artifact build has no manifest: {build_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError(f"Artifact manifest must be an object: {manifest_path}")
+    return manifest
+
+
+def artifact_manifest_digest(build_path: Path) -> str:
+    manifest_path = Path(build_path) / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError(f"Artifact build has no manifest: {build_path}")
+    return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+
+
 class ArtifactStore:
     """Store immutable builds and atomically select the current compatible build."""
 

@@ -2,6 +2,7 @@ import json
 
 import lance
 import pyarrow as pa
+import pytest
 from PIL import Image
 
 from csd_image2embedding.data.discovery import discover_directory
@@ -9,6 +10,7 @@ from csd_image2embedding.data.lance import (
     SOURCE_MANIFEST_NAME,
     LanceImageDataset,
     fingerprint_external_lance,
+    fingerprint_external_lance_inputs,
     write_source_snapshot,
 )
 
@@ -43,6 +45,17 @@ def test_directory_snapshot_writes_source_identity_and_readable_rows(tmp_path):
     assert caption == "red square"
 
 
+def test_directory_snapshot_rejects_image_changed_after_discovery(tmp_path):
+    source = tmp_path / "changing"
+    source.mkdir()
+    _write_png(source / "a.png", "red")
+    snapshot = discover_directory(source)
+    _write_png(source / "a.png", "blue")
+
+    with pytest.raises(ValueError, match="changed during snapshot"):
+        write_source_snapshot(snapshot, tmp_path / "changed.lance")
+
+
 def test_external_lance_fingerprint_uses_stored_rows_not_source_files(tmp_path):
     source_image = tmp_path / "source.png"
     source_image.write_bytes(b"first")
@@ -73,3 +86,32 @@ def test_external_lance_fingerprint_changes_with_stored_path_or_hash(tmp_path):
     )
 
     assert fingerprint_external_lance(first) != fingerprint_external_lance(second)
+
+
+def test_external_lance_keeps_image_and_caption_dependencies_separate(tmp_path):
+    first = lance.write_dataset(
+        pa.table(
+            {
+                "filename": ["a.png"],
+                "hash": ["hash-a"],
+                "captions": ["a lake"],
+            }
+        ),
+        tmp_path / "first-caption.lance",
+    )
+    second = lance.write_dataset(
+        pa.table(
+            {
+                "filename": ["a.png"],
+                "hash": ["hash-a"],
+                "captions": ["a mountain"],
+            }
+        ),
+        tmp_path / "second-caption.lance",
+    )
+
+    first_identity = fingerprint_external_lance_inputs(first)
+    second_identity = fingerprint_external_lance_inputs(second)
+
+    assert first_identity.image_digest == second_identity.image_digest
+    assert first_identity.caption_digest != second_identity.caption_digest

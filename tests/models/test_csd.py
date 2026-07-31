@@ -69,6 +69,8 @@ def test_csd_fingerprint_changes_with_processor_identity():
     second = CSDClipBackend(processor_name="processor-b", **common)
 
     assert first.fingerprint != second.fingerprint
+    assert len(first.preprocessing_fingerprint) == 64
+    assert first.preprocessing_fingerprint != second.preprocessing_fingerprint
 
 
 def test_csd_preprocessing_pads_non_square_images_to_model_size():

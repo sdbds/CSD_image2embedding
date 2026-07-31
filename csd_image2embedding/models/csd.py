@@ -251,6 +251,20 @@ class CSDClipBackend:
             device=device,
             amp_dtype=resolve_amp_dtype(device, precision),
         )
+        preprocessing_payload = {
+            "schema_version": 1,
+            "processor_name": processor_name,
+            "square_padding": "white_centered",
+            "pre_resize": {
+                "size": CSD_IMAGE_SIZE,
+                "interpolation": "lanczos",
+            },
+        }
+        self.preprocessing_fingerprint = hashlib.sha256(
+            json.dumps(
+                preprocessing_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
         fingerprint_payload = {
             "schema_version": CSD_BACKEND_SCHEMA_VERSION,
             "model_name": model_name,
