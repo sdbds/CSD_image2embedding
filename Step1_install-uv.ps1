@@ -32,17 +32,10 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     throw "uv was installed but is not available in this shell. Open a new shell and rerun this script."
 }
 
-if (-not (Test-Path ".venv")) {
-    uv venv .venv --python 3.11
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to create the Python 3.11 environment."
-    }
-}
-
-Write-Output "Installing locked runtime dependencies..."
-uv pip sync requirements-uv.txt --python .venv --index-strategy unsafe-best-match
+Write-Output "Installing the project and runtime dependencies..."
+uv sync --python 3.11 --no-dev --index-strategy unsafe-best-match
 if ($LASTEXITCODE -ne 0) {
-    throw "Runtime dependency installation failed."
+    throw "Project installation failed."
 }
 
 Write-Output "Trying the optional accelerated KMeans backend..."

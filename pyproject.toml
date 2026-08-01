@@ -1,7 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "csd-image2embedding"
 version = "0.1.0"
 requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "numpy<2",
+    "scikit-learn",
+    "pillow",
+    "datasets",
+    "tqdm",
+    "clip @ git+https://github.com/openai/CLIP.git@main",
+    "torch>=2.13.0",
+    "torchvision",
+    "safetensors",
+    "PyYAML",
+    "pylance",
+    "pyarrow",
+    "plotly",
+    "dash",
+    "rich",
+    "transformers<5.0",
+    "umap-learn",
+    "hdbscan",
+    "pacmap",
+    "ivis[gpu]",
+    "finch-clust[ann]",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.12,<1",
+]
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.setuptools.packages.find]
+include = ["csd_image2embedding*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

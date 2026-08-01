@@ -98,17 +98,18 @@ migration hint.
 Install the small development tool set and run verification:
 
 ```powershell
-uv pip install -r requirements-dev.txt --python .venv
-.venv/Scripts/python.exe -m ruff format --check .
-.venv/Scripts/python.exe -m ruff check .
-.venv/Scripts/python.exe -m pytest -q
+uv sync --python 3.11 --inexact
+uv run python -m ruff format --check .
+uv run python -m ruff check .
+uv run python -m pytest -q
 ```
 
-`requirements.txt` lists direct runtime dependencies. Regenerate the resolved
-lock instead of hand-editing transitive versions:
+Runtime and development dependencies are declared in `pyproject.toml`.
+`uv sync` generates `uv.lock` locally; the lock is intentionally ignored and
+is not shared through Git. Refresh the local resolution with:
 
 ```powershell
-uv pip compile requirements.txt --output-file requirements-uv.txt
+uv lock
 ```
 
 The original CSD model is documented at
