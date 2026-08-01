@@ -4,6 +4,8 @@ This inference runtime was ported from the dirty working tree at
 `D:\styledecouple_dinov3`. It does not claim to match the clean Git commit by
 itself. The commit, exact binary diff digest, source hashes, and adapted
 destination hashes below jointly identify the reviewed snapshot.
+`vendored_sha256` uses LF-canonicalized bytes so Git's Windows checkout policy
+does not change the recorded source identity.
 
 The vendored files keep the corrected model behavior. Local adaptations are
 limited to package-relative imports, an inlined SHA256 helper, formatting, and
@@ -43,5 +45,6 @@ The upstream license is
    text or newline conversion.
 3. Hash the four source files as bytes, port the inference-only changes, and run
    the strict-loader and transform regression tests.
-4. Run Ruff formatting once, hash the four final vendored files as bytes, update
-   this JSON block, and rerun the vendored-hash test.
+4. Run Ruff formatting once, replace CRLF with LF in the four final vendored
+   files before hashing their bytes, update this JSON block, and rerun the
+   vendored-hash test.

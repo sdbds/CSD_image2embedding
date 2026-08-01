@@ -266,5 +266,7 @@ def test_upstream_record_matches_all_vendored_file_hashes():
     metadata = json.loads(metadata_text)
 
     for relative_path, expected_sha256 in metadata["vendored_sha256"].items():
-        actual = hashlib.sha256((package_root / relative_path).read_bytes()).hexdigest()
+        source_bytes = (package_root / relative_path).read_bytes()
+        canonical_bytes = source_bytes.replace(b"\r\n", b"\n")
+        actual = hashlib.sha256(canonical_bytes).hexdigest()
         assert actual == expected_sha256, relative_path
